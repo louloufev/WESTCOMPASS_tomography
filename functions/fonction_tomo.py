@@ -18,8 +18,6 @@ from tomotok.core.derivative import compute_aniso_dmats
 from tomotok.core.geometry import RegularGrid
 from scipy.interpolate import RegularGridInterpolator
 import subprocess
-import imas_west
-import pywed
 import pdb
 import pickle
 import sys
@@ -324,13 +322,19 @@ def full_inversion_toroidal(nshot,
         transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion)
     start_time_get_equilibrium = time.time()
 
-    magflux = imas_west.get(nshot, 'equilibrium', 0, 1)
-    
-    t = pywed.tsbase(nshot, 'RIGNITRON', nargout = 1)[0][0]
-    magflux.time = magflux.time-t
+    if name_machine == 'WEST':
+        magflux = imas_west.get(nshot, 'equilibrium', 0, 1)
+        
+        t = pywed.tsbase(nshot, 'RIGNITRON', nargout = 1)[0][0]
+        magflux.time = magflux.time-t
 
-    derivative_matrix = get_derivative_matrix(inversion_method, R_noeud, Z_noeud, magflux)
-    derivative_matrix = 0
+        derivative_matrix = get_derivative_matrix(inversion_method, R_noeud, Z_noeud, magflux)
+        derivative_matrix = 0
+    else:
+        magflux = 0
+        t = 0
+        derivative_matrix = 0
+
     # if derivative_matrix:
     #     derivative_matrix = [[matrix[noeuds, :][:, noeuds] for matrix in sublist] for sublist in derivative_matrix]
     end_time_get_equilibrium = time.time()-start_time_get_equilibrium
@@ -1819,7 +1823,7 @@ def call_function_in_environment(module_name, function_name, environment_name, a
 
 
 class separatrix_map:
-    #class for easier plotting of magnetic map
+    #class for easier plotting of magnetic map on WEST
     def __init__(self, magflux, time):
 
         idx = np.searchsorted(magflux.time, time, side="left")
