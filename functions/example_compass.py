@@ -20,8 +20,8 @@ phi_grid = 1
 dr_grid = 1e-2
 dz_grid = 1e-2
 decimation = 1
-time_input = 0
-nshots = [61359, 61705, 61363,  61710, 61600, 61600, 60701]
+time_input =[1, 1.001] 
+nshots = [20879]
 reduce_frames = [100, 100, 10, 10, 400, 400, 4]
 params_fit = ['camera', None, None, None, 'camera', 'camera', 'camera']
 paths_calibration = ['/compass/home/fevre/WESTCOMPASS_tomography/models_and_calibrations/calibrations/compass/20879_2021_03_31 - first trial.ccc',
@@ -36,7 +36,7 @@ for k in range(len(materials)):
         path_CAD = paths_CAD[j]
         for i in range(len(params_fit)):
 
-            path_vid = None
+            path_vid = 'None'
             inversion_parameter = {}
             nshot = nshots[i]
             param_fit = params_fit[i]

@@ -99,7 +99,10 @@ def full_inversion_toroidal(nshot,
     start_time_get_parameters = time.time()
     #import input parameters
     name_calib = get_name(path_calibration)
-    name_mask = get_name(path_mask)
+    if path_mask:
+        name_mask = get_name(path_mask)
+    else:
+        name_mask = 'None'
     name_wall = get_name(path_wall)
     name_machine = get_name_machine(machine)
     
@@ -597,11 +600,13 @@ def FULL_MASK(mask,image_dim_y,image_dim_x,plot_image_reduction,path_remove_blin
     return corner_min_y, corner_max_y,corner_min_x, corner_max_x
 
 def get_vid(time_input, frame_input, path_vid = None, nshot = None, inversion_parameter = {}):
-    import pyMRAW
+
     from scipy import ndimage
   
-    if path_vid:
+    if path_vid != 'None':
+        
         try:
+            import pyMRAW
             images, data = pyMRAW.load_video(path_vid + '.chix')
             fps = data['Record Rate(fps)']
             image_dim_y = data['Image Height']
