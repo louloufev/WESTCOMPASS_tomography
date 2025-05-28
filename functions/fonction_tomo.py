@@ -106,19 +106,25 @@ def full_inversion_toroidal(nshot,
     #import camera calibrations
     world = World()
     real_pipeline = RayTransferPipeline2D()
-    # calcam_camera = calcam.Calibration(load_filename = path_calibration)
-    # realcam = calcam_camera.get_raysect_camera(coords = 'Display')   
-    calcam_camera = np.load(path_calibration, allow_pickle=True)
-    pixel_origins = calcam_camera['pixel_origins']
-    pixel_directions = calcam_camera['pixel_directions']
-    realcam = VectorCamera(pixel_origins.T, pixel_directions.T)
-    check_shot_and_video(nshot, path_vid)
+    try: 
+        import calcam
+        calcam_camera = calcam.Calibration(load_filename = path_calibration)
+        realcam = calcam_camera.get_raysect_camera(coords = 'Display')
+        pixel_origins = realcam.pixel_origins
+        mask = calcam_camera.subview_mask
+        pixel_directions = realcam.pixel_directions
+    except:
+        calcam_camera = np.load(path_calibration, allow_pickle=True)
+        pixel_origins = calcam_camera['pixel_origins']
+        pixel_directions = calcam_camera['pixel_directions']
+        realcam = VectorCamera(pixel_origins.T, pixel_directions.T)
+    if name_machine == 'west':
+        check_shot_and_video(nshot, path_vid)
 
 
     #load image data
     #handle the cases for treating simple images
-    img = get_name_extenstion(path_vid)
-    
+    img = os.path.basename(path_vid)
     if img == 'png':
         vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(path_vid = path_vid, nshot = nshot)
         t0 = 0
@@ -192,21 +198,6 @@ def full_inversion_toroidal(nshot,
     Z_wall = RZwall[:, 1]
     #check surface
     name_material, wall_material = recognise_material(name_material)
-    # if name_material == 'absorbing_surface':
-    #     wall_material = AbsorbingSurface()
-    # elif name_material == 'tungsten':
-    #     wall_material = RoughTungsten(1)
-    # elif name_material == 'tungsten05':
-    #     wall_material = RoughTungsten(0.5)
-    # elif name_material == 'tungsten03':
-    #     wall_material = RoughTungsten(0.3)
-    # elif name_material == 'tungsten001':
-    #     wall_material = RoughTungsten(0.01)
-    # else:
-    #     print('not recognised material, applying absorbing surface')
-    #     name_material ='absorbing_surface'
-    #     wall_material = AbsorbingSurface()
-    #give name of type of wall for save (CAD model or simple coordinates)
     if path_CAD:
         type_wall = 'CAD'
         name_CAD = os.path.basename(os.path.dirname(path_CAD))
@@ -214,8 +205,7 @@ def full_inversion_toroidal(nshot,
     else:
         type_wall = 'coords'
         name_CAD = 'coords'
-    #check if transfert_matrix already exists
-    nshot = int(nshot)
+
 
     if not phi_grid:
         n_polar = 1
