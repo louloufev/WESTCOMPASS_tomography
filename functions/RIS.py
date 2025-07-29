@@ -174,19 +174,18 @@ def load(shot_number, image_fetch = None, RIS = 3, origin = 'RAW', stamp = 'fram
     frame_bounds :
         Boundaries of the frame stamp
     """
-
+    
     flag = check_in_resolution(shot_number, pixel_selection, RIS, origin)
     if flag == False:
         return
-
     if image_fetch == None:
         sr = get_info(shot_number, RIS = RIS, origin = origin)
         image_fetch = np.arange(0, sr.daq_parameters.Images)
         stamp = 'frame'
-
     flag, memory_required, available_memory = check_memory(shot_number, image_fetch, RIS = RIS, origin = origin,
                                                            threshold = threshold, stamp = stamp,
                                                            convention = 'MIDDLE', pixel_selection = pixel_selection)
+    flag = 0
     if flag == True:
         return
 
@@ -253,7 +252,7 @@ def check_memory(shot_number, image_fetch, RIS = 3, origin = 'RAW', threshold = 
     if flag == False:
         return None, None, None
 
-    if image_fetch == None:
+    if image_fetch is not None:
         sr = get_info(shot_number, RIS = RIS, origin = origin)
         image_fetch = np.arange(0, sr.daq_parameters.Images)
 
@@ -309,7 +308,7 @@ def check_in_resolution(shot_number, pixel_selection, RIS = 3, origin = 'RAW'):
     flag : Bool
         True if fit the resolution of the camera, False otherwise
     """
-    resolution = get_resolution(shot_number, RIS = 3, origin = 'RAW')
+    resolution = get_resolution(shot_number, RIS = RIS, origin = origin)
 
     flag = True
     if pixel_selection != None:

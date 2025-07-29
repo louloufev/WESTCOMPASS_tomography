@@ -1,0 +1,4 @@
+New try3.9.7 (default, Sep 16 2021, 13:09:58) 
+[GCC 7.5.0]/sw/python/anaconda-2021.11/bin/pythonNew try3.9.20 | packaged by conda-forge | (main, Sep 30 2024, 17:49:10) 
+[GCC 13.3.0]/compass/home/fevre/.conda/envs/inversion_env/bin/pythonNew try3.9.20 | packaged by conda-forge | (main, Sep 30 2024, 17:49:10) 
+[GCC 13.3.0]/compass/home/fevre/.conda/envs/inversion_env/bin/python

@@ -3,9 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pdb
 import os
+import imageio
 
-
-def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, title = '', cmap = 'viridis'):
+def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, vmin = None, title = '', cmap = 'viridis'):
     path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
     RZwall = np.load(path_wall)
     R_wall = RZwall[:, 0]
@@ -14,7 +14,7 @@ def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = N
     fig, ax = plt.subplots(1,1)
     if image_raw:
         image = np.copy(image_raw).astype(float)
-        plt.imshow(image, extent=extent, origin = origin, vmax=vmax, cmap = cmap)
+        plt.imshow(image, extent=extent, origin = origin, vmax=vmax, vmin = vmin,  cmap = cmap)
         plt.title(title)
         plt.colorbar()
     plt.plot(R_wall, Z_wall, 'r')
@@ -41,7 +41,7 @@ def plot_masked_image(image, mask, alpha = 0.5, percentile_inf = None, percentil
     return fig
 
 
-def plot_image(image_raw, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, title = '', cmap = 'viridis'):
+def plot_image(image_raw, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, vmin = None, title = '', cmap = 'viridis'):
     # Superpose 2 images, giving some degree of transparency to mask (0<alpha<1)
     fig, ax = plt.subplots(1,1)
     
@@ -58,8 +58,12 @@ def plot_image(image_raw, xlabel = None, ylabel = None, percentile_inf = None, p
         image[np.invert((image>lower_bound) & (image<upper_bound))] = np.NaN
         print(lower_bound)
     if not vmax:
-        vmax = np.max(image)
-    plt.imshow(image, extent=extent, origin = origin, vmax=vmax, cmap = cmap)
+        vmax = np.nanmax(image)
+
+
+    if not vmin :
+        vmin = np.nanmin(image)
+    plt.imshow(image, extent=extent, origin = origin, vmax=vmax, vmin = vmin, cmap = cmap)
     plt.title(title)
     plt.colorbar()
     plt.show(block = False)
@@ -125,21 +129,16 @@ def plot_comparaison_image(image1, image2, percentile_inf = None, percentile_sup
 def xyztorphiz(Vec):
     if Vec.ndim>1:
         RPHIZ = np.full(Vec.shape[0], 3)
-      
         for i in range(Vec.shape[0]):
             RPHIZ[i, 0] = np.sqrt(Vec[i, 0]**2+Vec[i, 1]**2)
             RPHIZ[i, 1] =np.arctan2(Vec[i, 1], Vec[i, 0])
             RPHIZ[i, 2] = Vec[i, 2]
-
-       
     else:
-        
         r = np.sqrt(Vec[0]**2+Vec[1]**2)
         phi = np.arctan2(Vec[1], Vec[0] )
         z = Vec[2]
         RPHIZ = [r, phi, z]
     return RPHIZ
-
 
 def smooth_line_image(image = None, window_size = 3):
     if not image:
@@ -290,3 +289,341 @@ def apply_to_files(folder_path, extension, function_to_apply):
                     print(f"⚠️ Failed to process {full_path}: {e}")
                     continue
     return results
+
+
+def find_RZextrema_between_2_points(point1, point2):
+
+    # Example points
+    R1, phi1, Z1 = point1
+    R2, phi2, Z2 = point2
+
+    # Convert to Cartesian coordinates
+    x1, y1 = R1 * np.cos(phi1), R1 * np.sin(phi1)
+    x2, y2 = R2 * np.cos(phi2), R2 * np.sin(phi2)
+
+    # Number of interpolation points
+    N = 1000
+    t = np.linspace(0, 1, N)
+
+    # Linear interpolation in Cartesian coordinates
+    x = x1 + t * (x2 - x1)
+    y = y1 + t * (y2 - y1)
+    z = Z1 + t * (Z2 - Z1)
+
+    # Convert back to cylindrical R
+    R = np.sqrt(x**2 + y**2)
+
+    # Find extrema
+    R_min, R_max = R.min(), R.max()
+    Z_min, Z_max = z.min(), z.max()
+
+    return R_min, R_max, Z_min, Z_max
+
+
+
+
+def save_array_as_gif(array_3d, gif_path='output.gif', num_frames=100, cmap='Greys'):
+    """
+    Saves a 3D NumPy array (time, x, y) as a GIF with num_frames.
+
+    Parameters:
+        array_3d : np.ndarray
+            3D array with shape (time, x, y)
+        gif_path : str
+            File path for output GIF
+        num_frames : int
+            Number of frames to include in the GIF (evenly sampled)
+        cmap : str
+            Matplotlib colormap for visualization
+    """
+    from tempfile import TemporaryDirectory
+
+    assert array_3d.ndim == 3, "Input must be a 3D array (time, x, y)"
+
+    time_dim = array_3d.shape[0]
+    frame_indices = np.linspace(0, time_dim - 1, num_frames, dtype=int)
+
+    with TemporaryDirectory() as tmpdir:
+        filenames = []
+
+        for i, idx in enumerate(frame_indices):
+            fig, ax = plt.subplots()
+            ax.axis('off')
+            im = ax.imshow(array_3d[idx], cmap=cmap)
+            fig.tight_layout(pad=0)
+
+            frame_path = os.path.join(tmpdir, f'frame_{i:03d}.png')
+            plt.savefig(frame_path, bbox_inches='tight', pad_inches=0)
+            plt.close(fig)
+
+            filenames.append(frame_path)
+
+        # Create GIF
+        images = [imageio.imread(fname) for fname in filenames]
+        imageio.mimsave(gif_path, images, duration=0.3)  # duration per frame in seconds
+
+    print(f"GIF saved to {gif_path}")
+
+
+
+
+
+def save_array_as_img(array_3d, img_path='output.png', cmap='Greys'):
+    """
+    Saves a 3D NumPy array (time, x, y) as a GIF with num_frames.
+
+    Parameters:
+        array_3d : np.ndarray
+            3D array with shape (time, x, y)
+        gif_path : str
+            File path for output GIF
+        num_frames : int
+            Number of frames to include in the GIF (evenly sampled)
+        cmap : str
+            Matplotlib colormap for visualization
+    """
+
+    assert array_3d.ndim == 3, "Input must be a 3D array (time, x, y)"
+
+    time_dim = array_3d.shape[0]//2
+
+    fig, ax = plt.subplots()
+    ax.axis('off')
+    im = ax.imshow(array_3d[time_dim], cmap=cmap)
+    fig.tight_layout(pad=0)
+
+    plt.savefig(img_path, bbox_inches='tight', pad_inches=0)
+    plt.close(fig)
+
+
+    print(f"Image saved to {img_path}")
+
+
+def plot_line_from_cylindrical(point1, point2, fig = None, color = 'blue', label = 'Line between points'):
+    R1, phi1, Z1 = point1
+    R2, phi2, Z2 = point2
+    # Convert to Cartesian
+    x1, y1, z1 = R1 * np.cos(phi1), R1 * np.sin(phi1), Z1
+    x2, y2, z2 = R2 * np.cos(phi2), R2 * np.sin(phi2), Z2
+
+    # Interpolate points along the line
+    N = 100
+    t = np.linspace(0, 1, N)
+    x = x1 + t * (x2 - x1)
+    y = y1 + t * (y2 - y1)
+    z = z1 + t * (z2 - z1)
+
+    # Plotting the line
+    if not fig:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+    else:
+        ax = fig.axes[0]
+    ax.plot(x, y, z, label=label, color=color)
+    ax.scatter([x1, x2], [y1, y2], [z1, z2], color='red')  # endpoints
+
+    # Labels
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.legend()
+    plt.show(block = False)
+    return fig
+
+
+def plot_cylindrical_coordinates(contour_data, fig = None):
+
+    # --- Step 1: Extract R, φ, Z
+    R = contour_data[..., 0]
+    phi = contour_data[..., 1]
+    Z = contour_data[..., 2]
+
+    # --- Step 2: Convert to Cartesian
+    X = R * np.cos(phi)
+    Y = R * np.sin(phi)
+
+    # --- Step 3: Plot with matplotlib
+    if not fig:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+    else:
+        ax = fig.axes[0]
+
+    # Optional: if it's a surface-like contour
+    ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.7)
+
+    # Or if it's just a wire/line contour:
+    # ax.plot_wireframe(X, Y, Z, color='blue')
+
+    # Axis labels
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    plt.title('3D Contour in Cartesian Coordinates')
+    plt.tight_layout()
+    plt.show(block = False)
+    return fig
+
+def save_rotated_image(filename):
+    from PIL import Image
+
+    # Load the image
+    image = Image.open(filename)
+
+    # Rotate 90 degrees counter-clockwise (use -90 for clockwise)
+    rotated = image.rotate(90, expand=True)
+    filenamebase ,ext = os.path.splitext(filename)
+    # Save the rotated image
+    rotated.save(filenamebase + '_rotated' + ext)
+
+
+def save_transposed_image(filename, file_output = None):
+    from PIL import Image
+
+    # Load the image
+    image = Image.open(filename)
+
+    
+    # Transpose: swap X and Y (like matrix transpose)
+    transposed = image.transpose(Image.TRANSPOSE)
+    filenamebase ,ext = os.path.splitext(filename)
+    # Save the image
+    if not file_output:
+        transposed.save(filenamebase + '_correct_orientation' + ext)
+    else:
+        transposed.save(file_output + ext)
+
+
+def create_quick_synth_image(transfert_matrix, mask_noeud, mask_pixel):
+    import random
+    import fonction_tomo
+    visible_nodes, = np.where(mask_noeud.flatten())
+
+    ind_node_1D = random.choice(range(len(visible_nodes)))
+    ind_node_2D = visible_nodes[ind_node_1D]
+
+    synth_node_1D = np.zeros(len(visible_nodes))
+    synth_node_1D[ind_node_1D] = 1
+    synth_node_2D = fonction_tomo.reconstruct_2D_image(synth_node_1D, mask_noeud)
+    synth_image_1D = transfert_matrix.dot(synth_node_1D)
+    synth_image_2D = fonction_tomo.reconstruct_2D_image(synth_image_1D, mask_pixel)
+
+    return synth_node_2D, synth_image_2D
+
+
+def plot_comparison_synth_inversion(transfert_matrix, mask_noeud, mask_pixel, extent_RZ):
+
+
+    synth_node_2D, synth_image_2D = create_quick_synth_image(transfert_matrix, mask_noeud, mask_pixel)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(121)
+    ax.imshow(synth_image_2D.T)
+    ax = fig.add_subplot(122)
+    ax.imshow(synth_node_2D.T, origin = 'lower', extent = extent_RZ )
+    plt.show(block = False)
+    return synth_node_2D, synth_image_2D
+
+
+
+
+
+def plot_comparison_synth_inversion_noise(transfert_matrix, mask_noeud, mask_pixel, extent_RZ, noise = 0, inversion_method = 'lstsq'):
+
+
+    synth_node_2D, synth_node_2D_noise_inversed, synth_image_2D, synth_image_2D_noise = create_quick_synth_image_noise(transfert_matrix, mask_noeud, mask_pixel, noise, inversion_method)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(221)
+    ax.imshow(synth_image_2D.T)
+    ax = fig.add_subplot(222)
+    ax.imshow(synth_node_2D.T, origin = 'lower', extent = extent_RZ )
+    ax = fig.add_subplot(223)
+    ax.imshow(synth_image_2D_noise.T)
+    ax = fig.add_subplot(224)
+    ax.imshow(synth_node_2D_noise_inversed.T, origin = 'lower', extent = extent_RZ )
+    
+    
+    plt.show(block = False)
+    return synth_node_2D, synth_image_2D
+
+
+
+def create_quick_synth_image_noise(transfert_matrix, mask_noeud, mask_pixel, noise, inversion_method):
+    import random
+    import fonction_tomo
+    visible_nodes, = np.where(mask_noeud.flatten())
+
+    ind_node_1D = random.choice(range(len(visible_nodes)))
+    ind_node_2D = visible_nodes[ind_node_1D]
+
+    synth_node_1D = np.zeros(len(visible_nodes))
+    synth_node_1D[ind_node_1D] = 1
+    synth_node_2D = fonction_tomo.reconstruct_2D_image(synth_node_1D, mask_noeud)
+
+    synth_image_1D = transfert_matrix.dot(synth_node_1D)
+    synth_image_2D = fonction_tomo.reconstruct_2D_image(synth_image_1D, mask_pixel)
+    synth_image_2D_noise = synth_image_2D + noise*np.random.normal(loc = 0, scale = synth_image_2D.max(), size = synth_image_2D.shape)
+
+    synth_image_2D_noise_reduced = synth_image_2D_noise[mask_pixel]
+    from inversion_module import inversion_and_thresolding
+    inv_images = inversion_and_thresolding(synth_image_2D_noise_reduced[np.newaxis, :], transfert_matrix, inversion_method, mask = mask_noeud)[0]
+    synth_node_1D_noise_inversed = np.squeeze(inv_images)
+    synth_node_2D_noise_inversed = fonction_tomo.reconstruct_2D_image(synth_node_1D_noise_inversed, mask_noeud)
+    return synth_node_2D, synth_node_2D_noise_inversed, synth_image_2D, synth_image_2D_noise
+
+
+
+def gaussian_blur_video(video, sigma=1):
+    from scipy.ndimage import gaussian_filter
+    return np.array([gaussian_filter(frame, sigma=sigma) for frame in video])
+
+
+
+
+def create_quick_synth_image_noise_nr_nz(nr, nz, transfert_matrix, mask_noeud, mask_pixel, noise, inversion_method):
+    import random
+    import fonction_tomo
+    # visible_nodes, = np.where(mask_noeud.flatten())
+
+    # ind_node_1D = random.choice(range(len(visible_nodes)))
+    # ind_node_2D = visible_nodes[ind_node_1D]
+
+    # synth_node_1D = np.zeros(len(visible_nodes))
+    # synth_node_1D[ind_node_1D] = 1
+    # synth_node_2D = fonction_tomo.reconstruct_2D_image(synth_node_1D, mask_noeud)
+    synth_node_2D = np.zeros(mask_noeud.shape)
+    synth_node_2D[nr, nz] = 1
+    synth_node_1D = synth_node_2D[mask_noeud]
+    synth_image_1D = transfert_matrix.dot(synth_node_1D)
+    synth_image_2D = fonction_tomo.reconstruct_2D_image(synth_image_1D, mask_pixel)
+    synth_image_2D_noise = synth_image_2D + noise*np.random.normal(loc = 0, scale = synth_image_2D.max(), size = synth_image_2D.shape)
+
+    synth_image_2D_noise_reduced = synth_image_2D_noise[mask_pixel]
+    from inversion_module import inversion_and_thresolding
+    inv_images = inversion_and_thresolding(synth_image_2D_noise_reduced[np.newaxis, :], transfert_matrix, inversion_method, mask = mask_noeud)[0]
+    synth_node_1D_noise_inversed = np.squeeze(inv_images)
+    synth_node_2D_noise_inversed = fonction_tomo.reconstruct_2D_image(synth_node_1D_noise_inversed, mask_noeud)
+    return synth_node_2D, synth_node_2D_noise_inversed, synth_image_2D, synth_image_2D_noise
+
+
+
+
+def plot_comparison_synth_inversion_noise_nr_nz(nr, nz, transfert_matrix, mask_noeud, mask_pixel, extent_RZ, noise = 0, inversion_method = 'lstsq'):
+
+
+    synth_node_2D, synth_node_2D_noise_inversed, synth_image_2D, synth_image_2D_noise = create_quick_synth_image_noise_nr_nz(nr, nz,transfert_matrix, mask_noeud, mask_pixel, noise, inversion_method)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(221)
+    ax.imshow(synth_image_2D.T)
+    ax = fig.add_subplot(222)
+    ax.imshow(synth_node_2D.T, origin = 'lower', extent = extent_RZ )
+    ax = fig.add_subplot(223)
+    ax.imshow(synth_image_2D_noise.T)
+    ax = fig.add_subplot(224)
+    ax.imshow(synth_node_2D_noise_inversed.T, origin = 'lower', extent = extent_RZ )
+    
+    
+    plt.show(block = False)
+    return synth_node_2D, synth_image_2D

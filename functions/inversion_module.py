@@ -1,7 +1,5 @@
 from scipy.sparse import load_npz, isspmatrix, csc_matrix, csr_matrix, save_npz
-from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
-from tomotok.core.derivative import compute_aniso_dmats
-from tomotok.core.geometry import RegularGrid
+
 from scipy.interpolate import RegularGridInterpolator
 import sys
 import pickle
@@ -54,9 +52,16 @@ def synth_inversion(transfert_matrix, mask_pixel, mask_noeud,  pixels, noeuds, n
     image_noise = image + noise*np.random.normal(loc = 0, scale = image.max(), size = image.shape)
     image_full = reconstruct_2D_image(image, mask_pixel, mask_pixel.shape[0],  mask_pixel.shape[1])
     image_full_noise = reconstruct_2D_image(image_noise, mask_pixel, mask_pixel.shape[0], mask_pixel.shape[1])
-    images_noise = np.squeeze(image_noise)[None, :]
-    inv_image, inv_normed, inv_image_thresolded, inv_image_thresolded_normed, image_retrofit = inversion_and_thresolding(image_noise, transfert_matrix, inversion_method, c_c = c_c, inversion_parameter = inversion_parameter, derivative_matrix = derivative_matrix, mask = mask_noeud)
+    images_noise = image_noise[np.newaxis, :]
 
+    inv_image, inv_normed, inv_image_thresolded, inv_image_thresolded_normed, image_retrofit, mask, transfert_matrix = inversion_and_thresolding(images_noise, transfert_matrix, inversion_method, c_c = c_c, inversion_parameter = inversion_parameter, derivative_matrix = derivative_matrix, mask = mask_noeud)
+    inv_image = np.squeeze(inv_image)
+    inv_normed = np.squeeze(inv_normed)
+    inv_image_thresolded = np.squeeze(inv_image_thresolded)
+    inv_image_thresolded_normed = np.squeeze(inv_image_thresolded_normed)
+    image_retrofit = np.squeeze(image_retrofit)
+    image_full_noise = np.squeeze(image_full_noise)
+    image_full = np.squeeze(image_full)
     return node_full, inv_image, inv_normed, inv_image_thresolded, inv_image_thresolded_normed, image_retrofit, image_full_noise, image_full
     
 
@@ -112,25 +117,47 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, c_c = 
             images_retrofit[i, :] = transfert_matrix.dot(inv_image)  
 
     elif inversion_method == 'lstsq':
+        from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
+        from tomotok.core.derivative import compute_aniso_dmats
+        from tomotok.core.geometry import RegularGrid
         inversion = SparseBob()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
+        transfert_matrix = csr_matrix(transfert_matrix)
         inversion.decompose(transfert_matrix, simple_base)
-        inv_images = inversion(images, simple_base)
+        # inv_images = inversion(images.T)
         inversion.normalise()
-        inv_normed = np.divide(inv_images, inversion.norms)
-        inv_images_thresolded  = inversion.thresholding(images, c_c)
-        inv_images_thresolded_normed = np.divide(inv_images_thresolded,inversion.norms)
+        # inv_normed = np.divide(inv_images, inversion.norms)
+        # inv_images_thresolded  = inversion.thresholding(images, c_c)
+        # inv_images_thresolded_normed = np.divide(inv_images_thresolded,inversion.norms)
 
-        
-      
-        images_retrofit = transfert_matrix.dot(inv_images)
+        inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
+        inv_normed = np.divide(inv_images, inversion.norms)
+        inv_images_thresolded = np.zeros((transfert_matrix.shape[1], images.shape[0]))
+        inv_images_thresolded_normed = np.zeros((transfert_matrix.shape[1], images.shape[0]))
+        images_retrofit = np.zeros_like(images)
+        for i in range(images.shape[0]):
+        #     image = images[i, :]
+        #     mfr = Mfr_Cherab(transfert_matrix, derivative_matrix, data = image)
+        #     inv_image, norms = mfr.solve()
+        #     inv_images[i, :] = inv_image
+        #     inv_normed[i, :] = inv_image
+            image = images.T[:, i]
+            inv_images_thresolded[:, i] = np.squeeze(inversion.thresholding(image[:, np.newaxis], c = c_c))
+        #     inv_images_thresolded_normed[i, :] = inv_image
+            inv_image = inv_images[:, i] 
+            images_retrofit[i, :] = transfert_matrix.dot(inv_image)
+        #put back the inversion in the times, nodes order
+        inv_images = inv_images.T 
+        inv_normed = inv_normed.T
+        inv_images_thresolded = inv_images_thresolded.T
+        inv_images_thresolded_normed = inv_images_thresolded_normed.T
     elif inversion_method == 'Mfr':
         inversion = Mfr()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
         inversion.decompose(transfert_matrix, simple_base, solver_kw= inversion_parameter)
         inv_images = inversion(images, simple_base)
 
-        images_retrofit = transfert_matrix.dot(inv_images)
+        images_retrofit = transfert_matrix.dot(inv_image.T)
     elif inversion_method == 'nnls':
         try:
             alpha = inversion_parameter["alpha"]
@@ -278,7 +305,6 @@ def inverse_vid(transfert_matrix, mask_pixel,mask_noeud, vid, R_noeud, Z_noeud, 
     # images = np.reshape(vid, (vid.shape[0], vid.shape[1]*vid.shape[2]))
     # images = images[:, mask_pixel]
     images = vid[:, mask_pixel]
-
     inversion_results, inversion_results_normed, inversion_results_thresolded,inversion_results_thresolded_normed, images_retrofit, mask_noeud, transfert_matrix = inversion_and_thresolding(images, 
                                                                                                                                                                transfert_matrix, 
                                                                                                                                                                inversion_method, 
@@ -385,19 +411,19 @@ def plot_results_inversion_simplified(inv_image, transfert_matrix, image, mask_p
     
     #real image
     axi = fig.add_subplot(2, 2,1)
-    plt.imshow(image, cmap = cmap, vmin = vmin, vmax = vmax)
+    plt.imshow(image.T, cmap = cmap, vmin = vmin, vmax = vmax)
     plt.colorbar()
     plt.title('image')
 
     #retro fit
     axi = fig.add_subplot(2, 2,2)
-    plt.imshow(image_retrofit_full, cmap = cmap, vmin = vmin, vmax = vmax)
+    plt.imshow(image_retrofit_full.T, cmap = cmap, vmin = vmin, vmax = vmax)
     plt.colorbar()
     plt.title('Retro fit')
 
     #inversion
     axi = fig.add_subplot(2, 2,3)
-    plt.imshow(inv_image_full.T, extent = extent, origin = 'lower', cmap = cmap)
+    plt.imshow(inv_image_full.T, extent = extent, origin = 'lower', cmap = cmap, vmin = -1000, vmax = 1000)
     plt.colorbar()
     plt.plot(R_wall, Z_wall, 'r')
     # if magflux:
