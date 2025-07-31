@@ -627,3 +627,6 @@ def plot_comparison_synth_inversion_noise_nr_nz(nr, nz, transfert_matrix, mask_n
     
     plt.show(block = False)
     return synth_node_2D, synth_image_2D
+
+
+__all__ = ["plot_image"]

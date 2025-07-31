@@ -23,16 +23,26 @@ import pickle
 import sys
 import time
 import importlib
-import utility_functions
+from . import utility_functions
 
 import tkinter as tk
 from tkinter import filedialog
-import inversion_module
-importlib.reload(inversion_module)
-from inversion_module import inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified
-import yaml
-with open("ressources/folder_paths.yaml", "r") as f:
-    paths = yaml.safe_load(f)
+
+from .inversion_module import inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified
+from Tomography.ressources import components, paths
+
+#### yaml files
+# The folder_paths.yaml file can be used to easily input in which files you wish to load/save your inputs/outputs
+# if left blank, will create folders in your working directory
+# main_folder_transfert_matrices : folder for geometry matrixes as well as their inputs for the raytracing
+# main_folder_calibration : folder for your camera calibrations (.ccc format, from Calcam software)
+# main_folder_CAD : folder for your tokamak model (.ccm format, from Calcam software)
+# main_folder_resultat : for the results of the inversion, save them in .mat format for easiest use with matlab
+# main_folder_image : this folder is for images that get automatically drawn by the function to quickly check your results
+
+
+# with open("/ressources/folder_paths.yaml", "r") as f:
+#     paths = yaml.safe_load(f)
 
 main_folder_transfert_matrices = paths["main_folder_transfert_matrices"]
 main_folder_resultat = paths["main_folder_resultat"]
@@ -58,7 +68,6 @@ def full_inversion_toroidal(nshot,
                             variant = 'Default',
                             inversion_parameter = {"rcond" : 1e-3}, 
                             phi_grid = None, decimation = 1, 
-                            path_material = None, 
                             param_fit = None, 
                             ignore_mask_calibration = 0, 
                             dict_transfert_matrix = {}, 
@@ -81,26 +90,40 @@ def full_inversion_toroidal(nshot,
             File path to the coordinates of the wall. The path_wall string should lead to either a mat or a npy file, containing a 2D array of the form [N*2, (R, Z)] (N being the number of points that describe the wall) 
         path_mask : string
             File path to the chosen mask. Use the create_mask function to create the wanted mask. 
-        input_parameters : string
-            File path to the chosen parameters
-        t_start : float
-            time at which the video starts
-            if left at none, will prompt the user for a time (in ms)
+        ignore_mask_calibration : bool
+            if False, the mask saved in the calcam calibration will be prioritized over the mask from path_mask, unless this parameter is set to true
+
         time_input/frame input : array of two values [t_start, t_end]
             can choose to specify the time or frames on which to do the inversion. 
             if left at none, will treat the whole video
             if both specified, will take time_input over frame_input
         dr_grid/dz_grid : float, specify the step of the grid in both directions (in meter)
+        symetry : string
+            hypothesis on the emissivity uniformity. Can be set to 'toroidal' or 'magnetic
+        n_polar : int
+            number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
+
         Verbose : Value, 1 or 0
             set to 1 if you want to have verification steps in the inversion and raytracing progress 
             (will show plots of the different process to check if they are no glaring issues)
-        synth_inv : Value, 1 or 0
+        real_inv_flag : Value, 1 or 0
+            set to 1 if you want to have invert the video, set to 0 if you only want the raytracing
+        synth_inv_flag : Value, 1 or 0
             set to 1 if you want to have a random synthetic inversion 
             with a bit of noise to see if the inversion method holds well
+        name_material : String 
+            parameters to specify the model for the reflection of the walls
         inversion_method : String
             Choose the inversion method 
-        path_CAD : string, the string should lead to a zip file containing the CAD model.Can be left on None if you want to use just the wall coordinates to create the wall object. (more accurate but slower)
-        path_vid : string, path to the video folder, can be left on None if working on Compass. Can put the path of one image, in png format (full name with extension .png)
+        path_CAD : string, 
+            the string should lead to a zip file containing the CAD model, or a .ccm file.Can be left on None if you want to use just the wall coordinates to create the wall object. (more accurate but slower)
+        path_vid : string, 
+            path to the video folder, can be left on None if working on Compass. Can put the path of one image, in png format (full name with extension .png)
+        params_fit : either 'vid', 'camera', 'mask' or None (default)
+            The size of the video/camera/mask might be different. This allows which one should dictate the final dimensions.
+            Will crop the others or extend them with 0 to fit the final size
+        inversion_parameter : dictionnary
+            dictionnary for additionnal inversion parameters
 
     """
     #import functions
@@ -141,7 +164,7 @@ def full_inversion_toroidal(nshot,
     utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam.gif', num_frames=100, cmap='gray')
 
     vid = np.swapaxes(vid, 1,2)
-    utility_functions.save_array_as_img(main_folder_image + 'image_vid_mid_rotated.png')
+    utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
 
     mask_pixel, name_mask = load_mask(path_calibration, path_mask, ignore_mask_calibration)
     if machine == 'WEST':
@@ -204,7 +227,8 @@ def full_inversion_toroidal(nshot,
     if path_CAD:
         type_wall = 'CAD'
         name_CAD = os.path.splitext(os.path.basename(path_CAD))[0]
-        if os.path.dirname(path_CAD) != main_folder_CAD:
+        if not os.path.exists(path_CAD):
+            # if os.path.dirname(path_CAD) != main_folder_CAD:
             path_CAD = main_folder_CAD + path_CAD
 
     else:
@@ -725,7 +749,7 @@ def get_vid(time_input, frame_input, path_vid = None, nshot = None, inversion_pa
         t0 = t_start+frame_input[0]/fps
     else:
         RIS_number = 3
-        import RIS
+        from . import RIS
         try:
             if not frame_input:
                 out = RIS.get_info(nshot, RIS_number)
@@ -745,7 +769,6 @@ def get_vid(time_input, frame_input, path_vid = None, nshot = None, inversion_pa
             dict_video = RIS.get_info(nshot, RIS = RIS_number, origin = 'RAW')
         except:
             RIS_number = 4
-            import RIS
 
             if not frame_input:
                 out = RIS.get_info(nshot, RIS_number)
@@ -1795,7 +1818,6 @@ def compare_reflection_results(nshot,
                                inversion_parameter = {"rcond" : 1e-3}, 
                                phi_grid = None, 
                                decimation = 1, 
-                               path_material = None, 
                                param_fit = None
                                ):
     name_calib = get_name(path_calibration)
@@ -2644,16 +2666,12 @@ def read_material(path_stl, name_material, type_materials):
         return wall_materials
     else:
         wall_materials = []
-        import yaml
 
-        with open('ressources/components.yaml', 'rb') as f:
-            components_dict = yaml.safe_load(f)
-            f.close()
-       # with open('components.pkl', 'rb') as f:
-       #     components_dict = pickle.load(f)
-      #      f.close()
+        # with open('../ressources/components.yaml', 'rb') as f:
+        #     components = yaml.safe_load(f)
+        #     f.close()
         for i, f in enumerate(path_stl):
-            material = find_material(components_dict, f)
+            material = find_material(components, f)
             if 'W' in material:
                 wall_materials.append(type_materials)
             else:
@@ -2981,3 +2999,7 @@ def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_no
     grid_mask = (vertex_mask[1:, :-1] + vertex_mask[:-1, :-1]
                 + vertex_mask[1:, 1:] + vertex_mask[:-1, 1:])
     return cell_r, cell_z, grid_mask, cell_dr, cell_dz
+
+
+
+__all__ = ["full_inversion_toroidal"]
