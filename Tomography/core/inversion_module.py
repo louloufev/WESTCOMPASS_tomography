@@ -7,12 +7,43 @@ import pdb
 import numpy as np
 import scipy
 from cherab.tools.inversions.opencl.sart_opencl import SartOpencl
-
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import ImageGrid
 
 
 def synth_inversion(transfert_matrix, mask_pixel, mask_noeud,  pixels, noeuds, nb_noeuds_r, nb_noeuds_z,R_noeud, Z_noeud, R_wall, Z_wall, inversion_method, derivative_matrix, noise = 0, num_structures = 4, size_struct = 4, inversion_parameter = {"rcond": 1e-3}, c_c = 3):
+    """
+    Function that generate a synthetic image from a given geometry matrix. Can generate a random pattern of emissivity or random noise
+    (currently broken)
+
+    Inputs :
+    transfert_matrix
+    mask_pixel
+    mask_noeud
+    pixels
+    noeuds
+    nb_noeuds_r
+    nb_noeuds_z
+    R_noeud
+    Z_noeud
+    R_wall
+    Z_wall
+    inversion_method
+    derivative_matrix
+    noise = 0
+    num_structures = 4
+    size_struct = 4
+    inversion_parameter = {"rcond": 1e-3}
+    
+    Outputs :
+    node_full, inv_image, inv_normed, inv_image_thresolded, inv_image_thresolded_normed, image_retrofit, image_full_noise, image_full
+    
+    
+    
+    
+    """
+    
+    
     import numpy as np
     from scipy.io import loadmat
     from scipy.sparse import load_npz, csr_matrix, eye, issparse
@@ -54,7 +85,7 @@ def synth_inversion(transfert_matrix, mask_pixel, mask_noeud,  pixels, noeuds, n
     image_full_noise = reconstruct_2D_image(image_noise, mask_pixel, mask_pixel.shape[0], mask_pixel.shape[1])
     images_noise = image_noise[np.newaxis, :]
 
-    inv_image, inv_normed, inv_image_thresolded, inv_image_thresolded_normed, image_retrofit, mask, transfert_matrix = inversion_and_thresolding(images_noise, transfert_matrix, inversion_method, c_c = c_c, inversion_parameter = inversion_parameter, derivative_matrix = derivative_matrix, mask = mask_noeud)
+    inv_image, inv_normed, inv_image_thresolded, inv_image_thresolded_normed, image_retrofit, transfert_matrix = inversion_and_thresolding(images_noise, transfert_matrix, inversion_method, folder_inverse_matrix, dict_denoising, inversion_parameter)
     inv_image = np.squeeze(inv_image)
     inv_normed = np.squeeze(inv_normed)
     inv_image_thresolded = np.squeeze(inv_image_thresolded)
@@ -87,13 +118,47 @@ def get_derivative_matrix(inversion_method, R_noeud = None, Z_noeud = None, magf
     else:
         return None
 
-def inversion_and_thresolding(images, transfert_matrix, inversion_method, c_c = 3, inversion_parameter = {"rcond" : 1e-3}, derivative_matrix = None, mask = None, R_noeud = None, Z_noeud = None):
+def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder_inverse_matrix, dict_denoising= {}, inversion_parameter = {"rcond" : -1}):
+    """
+    Inputs :
+    images : 2D array
+    video data, in the #times, #pixels order (pixels grid has been previously flattened)
+    transfert_matrix : csr_matrix
+    geometry matrix, in the #pixels, #nodes order
+    inversion_method : string
+    name of the inversion method used
+    folder_inverse_matrix : string of a folder
+    folder where to save or load the inverse matrix
+    inversion_parameter : dictionnary, optionnal
+    dictionnary to add optionnal parameters for inversion
+    dict_denoising : dictionnary, optionnal
+    dictionnary to add instructions on operations annex to the inversion (filtering, denoising, etc...)
+
+    
+    Outputs :
+
+    inv_images : 2D array
+    video inversed, in the #times, #nodes order 
+    inv_normed : 2D array
+    video inversed and normalized, in the #times, #nodes order 
+    inv_images_thresolded :2D array
+    video inversed and denoized, in the #times, #nodes order  
+    inv_images_thresolded_normed : 2D array
+    video inversed and normalized and denoized, in the #times, #nodes order 
+    images_retrofit: 2D array
+    video reconstructed from nodes profile, in the #times, #pixels order 
+    transfert_matrix : csr_matrix 
+    geometry matrix, in the #pixels, #nodes order
+    """
+    
+    
+    
+    
     from cherab.tools.inversions import invert_regularised_nnls
     # images = images[:, None] #add a dimension for the computation to procede correctly
     # transfert_matrix = transfert_matrix.todense()
     # transfert_matrix[:, np.sum(transfert_matrix, 0)<1e-3] = 0
     # transfert_matrix = csr_matrix(transfert_matrix)
-    mask_copy = np.squeeze(mask.copy())
 
 
     if isspmatrix(transfert_matrix):
@@ -116,19 +181,79 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, c_c = 
             inv_images_thresolded_normed[i, :] = inv_image
             images_retrofit[i, :] = transfert_matrix.dot(inv_image)  
 
-    elif inversion_method == 'lstsq':
+    elif inversion_method == 'Bob':
         from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
         from tomotok.core.derivative import compute_aniso_dmats
         from tomotok.core.geometry import RegularGrid
+        c_c = dict_denoising.get('c_c')
+        c_c = c_c or 3
+
+
+
+        inversion = Bob()
+        simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
+        transfert_matrix = csr_matrix(transfert_matrix)
+
+
+        path_inverse_matrix = folder_inverse_matrix + 'inverse_matrix'
+        path_norm_matrix = folder_inverse_matrix + 'norm'
+
+        try:
+            inversion.load_decomposition(path_inverse_matrix)
+            print('successefully loaded inverse matrix')
+        except:
+            inversion.decompose(transfert_matrix, simple_base, solver_kw = inversion_parameter)
+            inversion._normalise_wo_mat()
+
+        inversion.save_decomposition(path_inverse_matrix)
+
+        inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
+        inv_normed = np.divide(inv_images, inversion.norms)
+        inv_images_thresolded = np.zeros((transfert_matrix.shape[1], images.shape[0]))
+        inv_images_thresolded_normed = np.zeros((transfert_matrix.shape[1], images.shape[0]))
+        images_retrofit = np.zeros_like(images)
+        for i in range(images.shape[0]):
+        #     image = images[i, :]
+        #     mfr = Mfr_Cherab(transfert_matrix, derivative_matrix, data = image)
+        #     inv_image, norms = mfr.solve()
+        #     inv_images[i, :] = inv_image
+        #     inv_normed[i, :] = inv_image
+            image = images.T[:, i]
+            inv_images_thresolded[:, i] = np.squeeze(inversion.thresholding(image[:, np.newaxis], c = c_c))
+        #     inv_images_thresolded_normed[i, :] = inv_image
+            inv_image = inv_images[:, i] 
+            images_retrofit[i, :] = transfert_matrix.dot(inv_image)
+        #put back the inversion in the times, nodes order
+        inv_images = inv_images.T 
+        inv_normed = inv_normed.T
+        inv_images_thresolded = inv_images_thresolded.T
+        inv_images_thresolded_normed = inv_images_thresolded_normed.T
+
+    elif inversion_method == 'SparseBob':
+        from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
+        from tomotok.core.derivative import compute_aniso_dmats
+        from tomotok.core.geometry import RegularGrid
+        c_c = dict_denoising.get('c_c')
+        c_c = c_c or 3
+
+
+
         inversion = SparseBob()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(transfert_matrix)
-        inversion.decompose(transfert_matrix, simple_base)
-        # inv_images = inversion(images.T)
-        inversion.normalise()
-        # inv_normed = np.divide(inv_images, inversion.norms)
-        # inv_images_thresolded  = inversion.thresholding(images, c_c)
-        # inv_images_thresolded_normed = np.divide(inv_images_thresolded,inversion.norms)
+
+
+        path_inverse_matrix = folder_inverse_matrix + 'inverse_matrix'
+        path_norm_matrix = folder_inverse_matrix + 'norm'
+
+        try:
+            inversion.load_decomposition(path_inverse_matrix)
+            print('successefully loaded inverse matrix')
+        except:
+            inversion.decompose(transfert_matrix, simple_base)
+            inversion._normalise_wo_mat()
+
+        inversion.save_decomposition(path_inverse_matrix)
 
         inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
         inv_normed = np.divide(inv_images, inversion.norms)
@@ -197,14 +322,39 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, c_c = 
             inv_images_thresolded_normed[i, :] = inv_image
             images_retrofit[i, :] = transfert_matrix.dot(inv_image)
 
-
     elif inversion_method == 'SART':
+        from cherab.tools.inversions.sart import invert_sart
+
+        transfert_matrix = np.array(transfert_matrix)
+        inv_images = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_normed = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_images_thresolded = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_images_thresolded_normed = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        images_retrofit = np.zeros_like(images)
+        for i in range(images.shape[0]):
+            image = images[i, :]
+            try:
+                inv_image, conv = invert_sart(transfert_matrix, np.squeeze(images[i, :]), max_iterations=100)
+            except:
+                inv_image = np.zeros(transfert_matrix.shape[1])
+            # pdb.set_trace()
+            inv_images[i, :] = inv_image
+            inv_normed[i, :] = inv_image
+            inv_images_thresolded[i, :] = inv_image
+            inv_images_thresolded_normed[i, :] = inv_image
+            images_retrofit[i, :] = transfert_matrix.dot(inv_image)  
+
+
+    elif inversion_method == 'OPENSART':
         import pyopencl as cl
         platform = cl.get_platforms()[0]
         device = platform.get_devices()[0]
 
         invert_sart = SartOpencl(transfert_matrix, device = device)
-
+        max_iterations = inversion_parameter.get('max_iterations')
+        max_iterations = max_iterations or 250
+        beta_laplace = inversion_parameter.get('beta_laplace')
+        beta_laplace = beta_laplace or 0.01
         inv_images = np.zeros((images.shape[0], transfert_matrix.shape[1]))
         inv_normed = np.zeros((images.shape[0], transfert_matrix.shape[1]))
         inv_images_thresolded = np.zeros((images.shape[0], transfert_matrix.shape[1]))
@@ -216,7 +366,8 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, c_c = 
         #         inv_image, residual = invert_sart(image, initial_guess=inv_images[i-1, :])
         #     else:
         #         inv_image, residual = invert_sart(image)
-            inv_image, residual = invert_sart(np.squeeze(image))
+            inv_image, residual = invert_sart(np.squeeze(image), beta_laplace = beta_laplace, max_iterations=max_iterations, conv_tol=0.0001)
+            print(residual[-1])
             inv_images[i, :] = inv_image
             inv_normed[i, :] = inv_image
             inv_images_thresolded[i, :] = inv_image
@@ -227,7 +378,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, c_c = 
         raise Exception('unrecognised inversion method')
     # raise RuntimeError(f"Failed to deserialize input: {inv_image}")
 
-    return inv_images, inv_normed, inv_images_thresolded, inv_images_thresolded_normed, images_retrofit, mask, transfert_matrix
+    return inv_images, inv_normed, inv_images_thresolded, inv_images_thresolded_normed, images_retrofit, transfert_matrix
         
 
 
@@ -300,23 +451,59 @@ def plot_results_inversion(inv_image, inv_normed, inv_image_thresolded, inv_imag
     plt.tight_layout()
     return figure_results
 
-def inverse_vid(transfert_matrix, mask_pixel,mask_noeud, vid, R_noeud, Z_noeud, inversion_method, inversion_parameter, derivative_matrix = None):
+def inverse_vid(transfert_matrix, mask_pixel,mask_noeud, pixels, noeuds, vid, R_noeud, Z_noeud, inversion_method, inversion_parameter, folder_inverse_matrix,dict_denoising, derivative_matrix = None):
+    """
+    main function for inverting video
+
+    Inputs :
+    transfert_matrix : csr_matrix
+    geometry matrix, in the #pixels, #nodes order
+    mask_pixel : 2D array 
+    mask for pixels with vision
+    mask_noeud : 2D array 
+    mask for visible nodes
+    vid : 2D array
+    video data, in the #times, #pixels order (pixels grid has been previously flattened)
+    R_noeud, Z_noeud : 1D arrays, coordinates of the emissivity grid (m)
+    inversion_method : string
+    name of the inversion method used
+    folder_inverse_matrix : string of a folder
+    folder where to save or load the inverse matrix
+    inversion_parameter : dictionnary, optionnal
+    dictionnary to add optionnal parameters for inversion
+    dict_denoising : dictionnary, optionnal
+    dictionnary to add instructions on operations annex to the inversion (filtering, denoising, etc...)
+
+    Outputs : 
+    Same as inversion_and_thresholding
+    
+    """
+    
+    
+    
     #initisalisation
     # images = np.reshape(vid, (vid.shape[0], vid.shape[1]*vid.shape[2]))
     # images = images[:, mask_pixel]
+
+    #prep transfert matrix for inversion
+
+    import time
+    start = time.time()
+    transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = prep_inversion(transfert_matrix, mask_pixel, mask_noeud, pixels, noeuds, inversion_parameter, R_noeud, Z_noeud)
+    end = time.time()
+    elapsed = end-start
+    print(f"Preparation transfert_matrix : {elapsed:.3f} seconds")
+
     images = vid[:, mask_pixel]
-    inversion_results, inversion_results_normed, inversion_results_thresolded,inversion_results_thresolded_normed, images_retrofit, mask_noeud, transfert_matrix = inversion_and_thresolding(images, 
+    inversion_results, inversion_results_normed, inversion_results_thresolded,inversion_results_thresolded_normed, images_retrofit, transfert_matrix = inversion_and_thresolding(images, 
                                                                                                                                                                transfert_matrix, 
-                                                                                                                                                               inversion_method, 
-                                                                                                                                                               c_c = 3, 
-                                                                                                                                                               inversion_parameter =inversion_parameter, 
-                                                                                                                                                               derivative_matrix = derivative_matrix,
-                                                                                                                                                               mask = mask_noeud,
-                                                                                                                                                               R_noeud = R_noeud, 
-                                                                                                                                                               Z_noeud = Z_noeud)
+                                                                                                                                                               inversion_method,
+                                                                                                                                                               folder_inverse_matrix,
+                                                                                                                                                               dict_denoising,
+                                                                                                                                                               inversion_parameter=inversion_parameter)
 
 	
-    return inversion_results, inversion_results_normed, inversion_results_thresolded,inversion_results_thresolded_normed, images_retrofit, mask_noeud, transfert_matrix
+    return inversion_results, inversion_results_normed, inversion_results_thresolded,inversion_results_thresolded_normed, images_retrofit, mask_noeud, mask_pixel, transfert_matrix
 
 
 
@@ -451,3 +638,125 @@ def plot_results_inversion_simplified(inv_image, transfert_matrix, image, mask_p
     plt.title('Error Retro fit')
     return fig
 
+
+def prep_inversion(transfert_matrix, mask_pixel, mask_noeud, pixels, noeuds, inversion_parameter, R_noeud, Z_noeud):
+    
+    if 'min_visibility_node' in inversion_parameter.keys():
+        
+        min_visibility_node = inversion_parameter.get('min_visibility_node')
+        sum_over_pix = np.sum(transfert_matrix, 0)
+        relevant_nodes = np.squeeze(np.array(sum_over_pix<min_visibility_node))
+        transfert_matrix[:, relevant_nodes] = 0
+        transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = reindex_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud)
+    if 'node_min_value' in inversion_parameter.keys():
+        transfert_matrix, pixels_flat, noeuds_flat, mask_pixel, mask_noeud = reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion)
+
+
+    # if 'zmin' in inversion_parameter.keys():
+        
+    #     mask_copy[R_noeud>0.84, Z_noeud<inversion_parameter['zmin']] = 0
+    #     # transfert_matrix[:, mask.flatten()[noeuds]]
+    # if 'wallnobaffle' in inversion_parameter.keys():
+    #     transfert_matrix = transfert_matrix.todense()
+    #     WALL = loadmat('WALL_LIMITER_NO_BAFFLE.mat')
+    #     RZWALL = np.array([WALL['R'], WALL['Z']])
+    #     RZWALL = np.squeeze(RZWALL).T
+    #     RZWALL = np.flip(RZWALL, 0)
+    #     wall_limit = axisymmetric_mesh_from_polygon(RZWALL)
+    #     for i, r in enumerate(R_noeud):
+    #         for j, z in enumerate(Z_noeud):  
+    #             pointrz = Point3D(r, 0, z)
+    #             if not wall_limit.contains(pointrz):          
+    #                 mask_copy[i, j]= 0
+    #     noeuds_flat = mask_copy.flatten()[noeuds_copy]
+    #     noeuds_flat.dtype = bool
+    #     transfert_matrix = transfert_matrix[:, noeuds_flat]
+    #     mask_noeud = mask_copy[:, None, :]
+    #     pixels_flat = np.where(np.sum(transfert_matrix, 1))[0]
+    #     transfert_matrix = transfert_matrix[pixels_flat, :]
+    #     mask_pixel_copy = np.zeros_like(mask_pixel).flatten()
+    #     mask_pixel_copy[pixels[pixels_flat]] = 1
+    #     mask_pixel = mask_pixel_copy.reshape(mask_pixel.shape)
+    # if 'nobaffle' in  inversion_parameter.keys():
+    #     transfert_matrix = transfert_matrix.todense()
+
+    #     noR = np.squeeze(R_noeud>2.45)
+    #     noz = np.squeeze(Z_noeud<-0.72)
+    #     mask_baffle = noR[:, None] * noz[None, :]
+    #     mask_copy[mask_baffle] = 0
+    #     noeuds_flat = mask_copy.flatten()[noeuds_copy]
+    #     noeuds_flat.dtype = bool
+    #     transfert_matrix = transfert_matrix[:, noeuds_flat]
+    #     mask_noeud = mask_copy[:, None, :]
+    #     pixels_flat = np.where(np.sum(transfert_matrix, 1))[0]
+    #     transfert_matrix = transfert_matrix[pixels_flat, :]
+    #     mask_pixel_copy = np.zeros_like(mask_pixel).flatten()
+    #     mask_pixel_copy[pixels[pixels_flat]] = 1
+    #     mask_pixel_copy = mask_pixel_copy.reshape(mask_pixel.shape)
+    #     # add 3rd dimension for toroidal dependency (needs to be done for previous steps, actually useless here)
+    #     # if mask_noeud.ndim == 3:
+    #     #     mask_noeud = np.tile(mask_copy, (1, mask_noeud.shape[1], 1))
+    #     # else:
+    #     #     mask_noeud = mask_copy[:, None, :]
+    # if 'mask_pixel' in inversion_parameter.keys():
+    #     mask_inversion = np.load('masks/west/'+ inversion_parameter['mask_pixel'] + '.npy')
+    #     transfert_matrix, pixels_flat, noeuds_flat, mask_pixel, mask_noeud = reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion)
+    #     pdb.set_trace()
+        
+
+    return transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud
+
+
+def reindex_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud):
+    pixel_shape = mask_pixel.shape
+    visible_pixel  = np.where(np.sum(transfert_matrix, 1))[0] #sum over nodes
+    visible_node = np.where(np.sum(transfert_matrix, 0))[1] #sum over pixels
+    pixels  = np.squeeze(pixels)[visible_pixel] 
+    noeuds  = np.squeeze(noeuds)[visible_node] 
+    #save results
+    mask_pixel = np.zeros(pixel_shape, dtype = bool).flatten()
+    mask_pixel[pixels] = True
+    mask_pixel = mask_pixel.reshape(pixel_shape)
+    # x, y, z = np.where(RZ_mask_grid)
+    # x = x[noeuds]
+    # y = y[noeuds]
+    # z = z[noeuds]
+    
+    mask_noeud[:] = False
+    try:
+        rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
+
+        mask_noeud[rows_noeud,indphi, cols_noeud] = True
+    except:
+        rows_noeud, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
+
+        mask_noeud[rows_noeud, cols_noeud] = True
+
+    
+
+    transfert_matrix = transfert_matrix[visible_pixel,:][:, visible_node]
+
+    return transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud 
+
+
+def reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion):
+        mask_pixel_out = mask_inversion*(mask_pixel)
+        mask_pixel_out = mask_pixel_out>0
+        visible_pixel = mask_pixel_out.flatten()[pixels]
+        visible_pixel = visible_pixel>0
+
+        pixels_out = pixels[visible_pixel]
+
+        transfert_matrix_out = transfert_matrix[visible_pixel, :]
+        sum_transfert_matrix_out = np.sum(transfert_matrix_out, 0)
+        visible_nodes = np.where(sum_transfert_matrix_out)[1]
+
+        noeuds_out = noeuds[visible_nodes]
+        transfert_matrix_out = transfert_matrix_out[:, visible_nodes]
+        noeuds_mask = np.where(mask_noeud.flatten())[0]
+        # noeuds_mask[visible_nodes]
+        mask_noeud_out =mask_noeud.flatten()
+        mask_noeud_out[:] = 0
+        mask_noeud_out[noeuds_mask[visible_nodes]] = 1
+        mask_noeud_out = mask_noeud_out.reshape(mask_noeud.shape)
+        return transfert_matrix_out, pixels_out, noeuds_out, mask_pixel_out, mask_noeud_out

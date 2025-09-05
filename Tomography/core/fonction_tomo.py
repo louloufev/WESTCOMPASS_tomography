@@ -28,7 +28,7 @@ from . import utility_functions
 import tkinter as tk
 from tkinter import filedialog
 
-from .inversion_module import inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified
+from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified
 from Tomography.ressources import components, paths
 
 #### yaml files
@@ -49,6 +49,7 @@ main_folder_resultat = paths["main_folder_resultat"]
 main_folder_image = paths["main_folder_image"]
 main_folder_calibration = paths["main_folder_calibration"]
 main_folder_CAD = paths["main_folder_CAD"]
+main_folder_processing = paths["main_folder_processing"]
 
 def full_inversion_toroidal(nshot, 
                             path_calibration, 
@@ -67,13 +68,13 @@ def full_inversion_toroidal(nshot,
                             path_CAD = None,
                             variant = 'Default',
                             inversion_parameter = {"rcond" : 1e-3}, 
-                            phi_grid = None, decimation = 1, 
-                            param_fit = None, 
-                            ignore_mask_calibration = 0, 
+                            phi_grid = None, 
+                            decimation = 1, 
+                            param_fit = None,  
                             dict_transfert_matrix = {}, 
+                            dict_denoising = {'c_c' :3, 'sigma' : 0, 'median' : 10},
                             synth_inv_flag = 0, 
-                            real_inv_flag = 0, 
-                            dict_synth = {},
+                            real_inv_flag = 1, 
                             n_polar = 1):
     """
     This function does the inversion for a given shot, for a given time or frame span.
@@ -89,41 +90,114 @@ def full_inversion_toroidal(nshot,
         path_wall : string
             File path to the coordinates of the wall. The path_wall string should lead to either a mat or a npy file, containing a 2D array of the form [N*2, (R, Z)] (N being the number of points that describe the wall) 
         path_mask : string
-            File path to the chosen mask. Use the create_mask function to create the wanted mask. 
-        ignore_mask_calibration : bool
-            if False, the mask saved in the calcam calibration will be prioritized over the mask from path_mask, unless this parameter is set to true
+            File path to the chosen mask. Use the create_mask function to create the wanted mask.If it is an empty string, will pick up the mask from the Calcam calibration. 
 
+ 
         time_input/frame input : array of two values [t_start, t_end]
             can choose to specify the time or frames on which to do the inversion. 
             if left at none, will treat the whole video
             if both specified, will take time_input over frame_input
+            NB : time input is in milliseconds
         dr_grid/dz_grid : float, specify the step of the grid in both directions (in meter)
         symetry : string
             hypothesis on the emissivity uniformity. Can be set to 'toroidal' or 'magnetic
         n_polar : int
             number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
-
-        Verbose : Value, 1 or 0
-            set to 1 if you want to have verification steps in the inversion and raytracing progress 
+            Magnetic reconstruction on Compass has a 0.2 degrees precision for the toroidal angle (n_polar = 1800)
+        Verbose : Boolean
+            set to True if you want to have verification steps in the inversion and raytracing progress 
             (will show plots of the different process to check if they are no glaring issues)
-        real_inv_flag : Value, 1 or 0
-            set to 1 if you want to have invert the video, set to 0 if you only want the raytracing
-        synth_inv_flag : Value, 1 or 0
-            set to 1 if you want to have a random synthetic inversion 
+        real_inv_flag : Boolen
+            set to True if you want to have invert the video, set to 0 if you only want the raytracing
+        synth_inv_flag : Boolen
+            set to True if you want to have a random synthetic inversion 
             with a bit of noise to see if the inversion method holds well
         name_material : String 
             parameters to specify the model for the reflection of the walls
         inversion_method : String
-            Choose the inversion method 
+            Choose the inversion method (refer to the inversion_module for options)
+        inversion_parameter : dictionnary
+            dictionnary for additionnal inversion parameters that are specific to the inversion method(refer to the inversion_module for options)
         path_CAD : string, 
             the string should lead to a zip file containing the CAD model, or a .ccm file.Can be left on None if you want to use just the wall coordinates to create the wall object. (more accurate but slower)
+        variant : string
+            specify the variant of model in the calcam CADmodel given by path_CAD. Default is 'Default'
         path_vid : string, 
             path to the video folder, can be left on None if working on Compass. Can put the path of one image, in png format (full name with extension .png)
         params_fit : either 'vid', 'camera', 'mask' or None (default)
             The size of the video/camera/mask might be different. This allows which one should dictate the final dimensions.
             Will crop the others or extend them with 0 to fit the final size
-        inversion_parameter : dictionnary
-            dictionnary for additionnal inversion parameters
+        dict_transfert_matrix : dictionnary 
+        dictionnary for additionnal inversion parameters that are specific for each machine or for a shot
+            Compass :
+                grid_precision_multiplier : int, powers of 2, default 1
+                    If the uniformity hypothesis is on the magnetic field lines, the 3d grid on which the raytracing is done is not the same as the coordinates on which the field lines are calculated.
+                    The 3d raytracing grid is set by default to have the same precision as the magnetic field lines, which may lead to errors.
+                    The grid precision multiplier multiplies the number of points in each dimension R, Z (see n_polar for the angular precision) 
+                    To ensure a fine enough mesh, raise the grid_precision_multiplier to fully capture on the 3d grid the position of the field lines.
+
+                variant_mag : string
+                    the variant of the equilibrium reconstruction given by pleque (default is '')
+                revision : int
+                    the number of the revision of the equilibrium reconstruction given by pleque (default is 1)
+                phi_grid : scalar
+                    angle chosen for the emissivity 2D RZ-plane (in degrees) 
+
+                
+        gaussian filter : scalar, default 0
+            if not 0, applies a gaussian filter to the video frames, with its standard deviation equals to gaussian filter
+            scipy.ndimage.gaussian_filter
+        median filter : integer, default 0
+            if not 0, applies a time median filter to the video, the size of its windows given by median filter
+
+
+            
+            Outputs :
+            NB : some results are saved automatically
+            
+            transfert_matrix : csr matrix
+            Output of the raytracing, gives the geomatry matrix that can create an image from an emissivity profile
+
+            vid : 3D array (time, X, Y)
+            Video treated in the inversion (gaussian filter, median filter, etc..)
+            NB : Frames are saved in the (1st dimension : Horizontal, 2nd dimension: Vertical) format, contrary to python (vertical then horizontal) format
+            For exemple, to plot using the imshow command, you first have to transpose the frame; plt.ismhow(vid[0, :, :].T)
+
+            images_retrofit_full : 3D array (time, X, Y)
+            Synthetic images reconstructed from the emissivity profiles found from inversion
+            Same remark as previous one.
+
+            inversion_results_full : 3D array (time, R, Z)
+            emissivity plane from inversion, in the R, Z format
+            NB : the nodes are saved in increasing in R and Z values, careful in using imshow to invert the Y axis of the plot as its default places the first element of the Y axis in the top
+
+            inversion_results_thresolded_full : 3D array (time, R, Z)
+            Same as previous one, but after a denoising effect has been applied on the result
+
+            pixels : 1D array
+                indicates in the 2D grid of the pixels, which one are used/see the plasma
+
+            noeuds 1D array
+                indicates in the 2D grid of the emissivity nodes, which one are seen by the camera
+
+            
+            dr_grid, dz_grid : float
+                final values of the steps of the emissivity grid.
+            nb_noeuds_r, nb_noeuds_z : int
+                number of points in each dimensions
+
+            RZwall, R_wall, Z_wall : arrays
+                coordinates of the wall
+            world : World (from Cherab  module) :
+                environment in which the raytracing was done
+
+            full_wall : Mesh (from cherab module) :
+                3D boundaries of the wall
+
+            R_noeud, Z_noeud : 1D array
+                coordinates of the emissivity grid
+            mask_pixel, mask_noeud : 2D arrays
+                mask on respectively the camera and the emissivity grid
 
     """
     #import functions
@@ -143,86 +217,15 @@ def full_inversion_toroidal(nshot,
 
 
     realcam = load_camera(path_calibration)
-    if name_machine == 'west':
+    if name_machine == 'WEST':
         check_shot_and_video(nshot, path_vid)
-
+    mask_pixel, name_mask = load_mask(path_calibration, path_mask)
 
     #load image data
-    #handle the cases for treating simple images
+    ##### handle the cases for treating simple images
     [name_vid, ext] = os.path.splitext(path_vid)
 
-    if ext == '.png':
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(path_vid = path_vid, nshot = nshot)
-        t0 = 0
-        tstart = 0
-        tinv = 0
-
-    else: #load videos
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = get_vid(time_input, frame_input, path_vid = path_vid, nshot = nshot, inversion_parameter=inversion_parameter)
-    #load mask, check size
-    utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid.png')
-    utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam.gif', num_frames=100, cmap='gray')
-
-    vid = np.swapaxes(vid, 1,2)
-    utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
-
-    mask_pixel, name_mask = load_mask(path_calibration, path_mask, ignore_mask_calibration)
-    if machine == 'WEST':
-        vid = np.swapaxes(vid, 1,2)
-        if image_dim_y == mask_pixel.shape[0] and param_fit==None:
-            vid = np.swapaxes(vid, 1,2)
-        
-        utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
-
-    realcam, mask_pixel, vid = fit_size_all(realcam, mask_pixel, vid, param_fit)
-    utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rezizing.gif', num_frames=100, cmap='viridis')
-
-
-    if decimation != 1:
-        realcam, mask_pixel, vid = reduce_camera_precision(realcam, mask_pixel, vid, decimation = decimation)
-        utility_functions.save_array_as_gif(vid, gif_path='quickcheck_cam_after_decimation.gif', num_frames=100, cmap='viridis')
-
-    # corner_min_y, corner_max_y,corner_min_x, corner_max_x = FULL_MASK(mask,realcam.pixel_origins.shape[0],realcam.pixel_origins.shape[1],0,path_mask)
-    """
-    if image_dim_y!= realcam.pixel_origins.shape[0]:
-        realcam = VectorCamera( realcam.pixel_origins[corner_min_y:corner_max_y,corner_min_x: corner_max_x] ,
-                realcam.pixel_directions[corner_min_y:corner_max_y,corner_min_x: corner_max_x])
-                """
-#    realcam = VectorCamera( realcam.pixel_origins[corner_min_y:corner_max_y,corner_min_x: corner_max_x],realcam.pixel_directions[corner_min_y:corner_max_y,corner_min_x: corner_max_x])
-#    vid = vid[0, corner_min_y:corner_max_y,corner_min_x: corner_max_x]
-    realcam.frame_sampler=FullFrameSampler2D(mask_pixel)
-    realcam.pipelines=[real_pipeline]
-    realcam.parent=world
-    realcam.pixel_samples = 100
-    realcam.min_wavelength = 640
-    realcam.max_wavelength = realcam.min_wavelength +1
-    realcam.render_engine.processes = 16
-
-
-    #loading wall coordinates
-    try:
-        fwall = loadmat(path_wall)
-        RZwall = fwall['RZwall']
-
-    except:
-        RZwall = np.load(path_wall, allow_pickle=True)
-    #check that the last element is the neighbor of the first one and not the same one
-    if(RZwall[0]==RZwall[-1]).all():
-        RZwall = RZwall[:-1]
-        print('erased last element of wall')
-    #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
-    R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
-    Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
-    theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
-    theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
-    print(RZwall[:5])
-    # if theta2-theta1<0:
-    #     RZwall = RZwall[::-1]
-    #     print('wall reversed')
-    print(RZwall[:5])
-    R_wall = RZwall[:, 0]
-    Z_wall = RZwall[:, 1]
-    #check surface
+#check surface
     name_material, wall_material = recognise_material(name_material)
     if path_CAD:
         type_wall = 'CAD'
@@ -250,7 +253,7 @@ def full_inversion_toroidal(nshot,
         '_dr_' + str(int(dr_grid*1e3)) + 
         '_decimation_' + str(decimation)
     )
-    pairs_str = " ".join(f"{k}_{v}" for k, v in dict_transfert_matrix.items())
+    pairs_str = "_".join(f"{k}_{v}" for k, v in dict_transfert_matrix.items())
     secondary_name_parameters = (
         'cropping_' + str(param_fit) + 
         '_reflexion_dict_' + pairs_str +
@@ -262,31 +265,151 @@ def full_inversion_toroidal(nshot,
     name_parameters = main_name_parameters + '/' + secondary_name_parameters
     #prepare path and folder to save the data
     # path of parameters and inversion
-    folder_parameters = main_folder_transfert_matrices + name_machine + '/' + name_parameters + '/'
+    folder_parameters = main_folder_processing + name_machine + '/' + str(nshot)+  '/' + name_parameters + '/'
     path_parameters = folder_parameters + 'parameters.npz'
     path_transfert_matrix = folder_parameters +  'transfert_matrix.npz'
     os.makedirs(folder_parameters, exist_ok=True)
-    # path of inversion results
-    folder_resultat = main_folder_resultat + name_machine + '/' + str(nshot) + '/'
+
+
+    # path inverse matrix
     name_dict_parameter_inversion = get_name_parameters_inversion(inversion_parameter)
-    name_inversion = 'inversion_results_method_' +str(inversion_method)+ '_inversion_parameter_' + name_dict_parameter_inversion
+    name_inversion = 'inversion_method_' +str(inversion_method)+ '_inversion_parameter_' + name_dict_parameter_inversion
+ 
+    folder_inverse_matrix = folder_parameters + name_inversion + '/'
+ 
+    os.makedirs(folder_inverse_matrix, exist_ok = True)
+
+
+    # path of inversion results
+    pairs_str = "_".join(f"{k}_{v}" for k, v in dict_denoising.items())
+    name_parameters_vid = (
+        'denoising' + pairs_str 
+    )
     name_vid = os.path.basename(path_vid)
-    folder_resultat_inversion =  folder_resultat + name_parameters +  '/' + name_inversion + '/'  
-    name_resultat_inversion =  'vid_' + str(name_vid) + '_frames_'+ str(frame_input[0]) + '_'+ str(frame_input[1])
-    save_resultat_inversion = folder_resultat_inversion + name_resultat_inversion
-    os.makedirs(folder_resultat_inversion, exist_ok=True)
+    folder_save_result = folder_inverse_matrix + name_parameters_vid + '/'
+    os.makedirs(folder_save_result, exist_ok = True)
+    name_resultat_inversion =  'vid_' + name_vid + '_frames_'+ str(frame_input[0]) + '_'+ str(frame_input[1])
+    save_resultat_inversion = folder_save_result + name_resultat_inversion
+
 
     # path images
-    folder_image = main_folder_image + name_machine + '/'
-    folder_images_reelles =  folder_image + 'images_reelles/' + str(nshot) + '/' + name_parameters + name_inversion + '/'
+    folder_images_reelles =  folder_save_result + 'images_reelles/' 
     os.makedirs(folder_images_reelles, exist_ok=True)
     name_images_reelles = folder_images_reelles + 'vid_' + str(name_vid)
 
-    folder_images_synthetiques = folder_image + 'images_synthetiques/' + str(nshot) + '/' + name_parameters + name_inversion + '/'
+    folder_images_synthetiques = folder_save_result + 'images_synthetiques/' 
     os.makedirs(folder_images_synthetiques, exist_ok=True)
     name_images_synthetiques = folder_images_synthetiques + 'vid_' + str(name_vid)
 
+#loading wall coordinates
+    try:
+        fwall = loadmat(path_wall)
+        RZwall = fwall['RZwall']
 
+    except:
+        RZwall = np.load(path_wall, allow_pickle=True)
+    #check that the last element is the neighbor of the first one and not the same one
+    if(RZwall[0]==RZwall[-1]).all():
+        RZwall = RZwall[:-1]
+        print('erased last element of wall')
+    #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
+    R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
+    Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
+    theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
+    theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
+    print(RZwall[:5])
+    # if theta2-theta1<0:
+    #     RZwall = RZwall[::-1]
+    #     print('wall reversed')
+    print(RZwall[:5])
+    R_wall = RZwall[:, 0]
+    Z_wall = RZwall[:, 1]
+
+    if os.path.exists(save_resultat_inversion + '.mat'):
+        dict_results = loadmat(save_resultat_inversion + '.mat')
+        inversion_results_full = dict_results['inversion_results_full']
+        inversion_results_thresolded_full = dict_results['inversion_results_thresolded_full']
+        images_retrofit_full = dict_results['images_retrofit_full']
+        mask_pixel = dict_results['mask_pixel']
+        mask_noeud = dict_results['mask_noeud']
+        pixels = dict_results['pixels']
+        noeuds = dict_results['noeuds']
+        frame_input = dict_results['frame_input']
+        t_start = dict_results['t_start']
+        t0 = dict_results['t0']
+        t_inv = dict_results['t_inv']
+        # path_transfert_matrix = dict_results['path_transfert_matrix']
+        # path_parameters = dict_results['path_parameters']
+        path_vid = dict_results['path_vid']
+        vid = dict_results['vid']
+        transfert_matrix = load_npz(path_transfert_matrix)
+        path_parameters_save, ext = os.path.splitext(path_parameters)
+        parameters = loadmat(path_parameters_save)
+        pixels = parameters['pixels']
+        noeuds = parameters['noeuds']
+        
+        nb_noeuds_r = parameters['nb_noeuds_r']
+        nb_noeuds_z = parameters['nb_noeuds_z']
+        world = World()
+        full_wall = axisymmetric_mesh_from_polygon(RZwall)
+        R_noeud = parameters['R_noeud']
+        Z_noeud = parameters['Z_noeud']
+        dr_grid = np.mean(np.diff(R_noeud))
+        dz_grid = np.mean(np.diff(R_noeud))
+        # mask_pixel = parameters['mask_pixel']
+        # mask_noeud = parameters['mask_noeud']
+        pdb.set_trace()
+        transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = prep_inversion(transfert_matrix, mask_pixel, mask_noeud,pixels, noeuds, inversion_parameter, R_noeud, Z_noeud)
+        return transfert_matrix, vid, images_retrofit_full, inversion_results_full, inversion_results_thresolded_full, pixels, noeuds, dr_grid, dz_grid, nb_noeuds_r, nb_noeuds_z, RZwall, R_wall, Z_wall, world, full_wall, R_noeud, Z_noeud, mask_pixel, mask_noeud
+
+    if ext == '.png':
+        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(path_vid = path_vid, nshot = nshot)
+        t0 = 0
+        tstart = 0
+        tinv = 0
+    ####
+    else: #load videos
+        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = get_vid(time_input, frame_input, path_vid = path_vid, nshot = nshot, inversion_parameter=dict_denoising)
+    #load mask, check size
+    utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid.png')
+    utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam.gif', num_frames=100, cmap='gray')
+    mask_pixel = mask_pixel.T
+    vid = np.swapaxes(vid, 1,2)
+    utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
+
+    if machine == 'WEST':
+        vid = np.swapaxes(vid, 1,2)
+        if image_dim_y == mask_pixel.shape[0] and param_fit==None:
+            vid = np.swapaxes(vid, 1,2)
+        
+        utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
+
+    realcam, mask_pixel, vid = fit_size_all(realcam, mask_pixel, vid, param_fit)
+    utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rezizing.gif', num_frames=100, cmap='viridis')
+
+
+    if decimation != 1:
+        realcam, mask_pixel, vid = reduce_camera_precision(realcam, mask_pixel, vid, decimation = decimation)
+        utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_decimation.gif', num_frames=100, cmap='viridis')
+
+    # corner_min_y, corner_max_y,corner_min_x, corner_max_x = FULL_MASK(mask,realcam.pixel_origins.shape[0],realcam.pixel_origins.shape[1],0,path_mask)
+    """
+    if image_dim_y!= realcam.pixel_origins.shape[0]:
+        realcam = VectorCamera( realcam.pixel_origins[corner_min_y:corner_max_y,corner_min_x: corner_max_x] ,
+                realcam.pixel_directions[corner_min_y:corner_max_y,corner_min_x: corner_max_x])
+                """
+#    realcam = VectorCamera( realcam.pixel_origins[corner_min_y:corner_max_y,corner_min_x: corner_max_x],realcam.pixel_directions[corner_min_y:corner_max_y,corner_min_x: corner_max_x])
+#    vid = vid[0, corner_min_y:corner_max_y,corner_min_x: corner_max_x]
+    realcam.frame_sampler=FullFrameSampler2D(mask_pixel)
+    realcam.pipelines=[real_pipeline]
+    realcam.parent=world
+    realcam.pixel_samples = 100
+    realcam.min_wavelength = 640
+    realcam.max_wavelength = realcam.min_wavelength +1
+    realcam.render_engine.processes = 16
+
+    
+    
 
 
     if os.path.exists(path_parameters):
@@ -331,14 +454,15 @@ def full_inversion_toroidal(nshot,
 
         #load wall models
         # check how the wall is described; either CAD or coord
-        full_wall = axisymmetric_mesh_from_polygon(RZwall)
-        full_wall.material = wall_material
+        
         if path_CAD:
             try:
                 full_wall, name_material = read_CAD_from_calcam_module(path_CAD, world, name_material, wall_material, variant = variant)
             except:
                 full_wall, name_material = read_CAD(path_CAD, world, name_material, wall_material, variant = variant)
         else: 
+            full_wall = axisymmetric_mesh_from_polygon(RZwall)
+            full_wall.material = wall_material
             full_wall.parent = world
         #calculate transfert matrix
         [transfert_matrix, 
@@ -372,11 +496,6 @@ def full_inversion_toroidal(nshot,
                                             n_polar=n_polar,
                                             t_inv = t_inv)
     end_time_get_parameters = time.time()-start_time_get_parameters
-    if ignore_mask_calibration:
-        mask_inversion, name_mask_inversion = load_mask(path_calibration, path_mask, ignore_mask_calibration)
-        transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion)
-    else:
-        name_mask_inversion = name_mask
     start_time_get_equilibrium = time.time()
 
     if name_machine == 'WEST':
@@ -399,16 +518,11 @@ def full_inversion_toroidal(nshot,
     print(mask_noeud)
     print(mask_noeud.shape)
 
-    #prep transfert matrix for inversion
-
-
-    mask_noeud, transfert_matrix, noeuds, mask_pixel, pixels = prep_inversion(mask_noeud, noeuds, mask_pixel, pixels, inversion_parameter, R_noeud, Z_noeud, transfert_matrix)
-
 
 
 
     if synth_inv_flag:
-        if inversion_method == 'Cholmod' or inversion_method == 'Mfr_Cherab' or inversion_method== 'SART':
+        if inversion_method == 'Cholmod' or inversion_method == 'Mfr_Cherab':
             (node_full, 
                 inv_image_synth, 
                 inv_normed_synth, 
@@ -496,7 +610,7 @@ def full_inversion_toroidal(nshot,
     start_time_get_inversion = time.time()
 
     if real_inv_flag:
-        if inversion_method == 'Cholmod' or inversion_method == 'Mfr_Cherab' or inversion_method== 'SART' :
+        if inversion_method == 'Cholmod' or inversion_method == 'Mfr_Cherab':
             
             inversion_results, inversion_results_normed, inversion_results_thresolded, inversion_results_thresolded_normed, images_retrofit, mask_noeud, transfert_matrix = call_module2_function("inverse_vid", 
                                                     transfert_matrix, 
@@ -517,15 +631,22 @@ def full_inversion_toroidal(nshot,
              inversion_results_thresolded_normed, 
              images_retrofit, 
              mask_noeud, 
-             transfert_matrix ]= inverse_vid(transfert_matrix, 
+             mask_pixel, 
+             transfert_matrix
+              ]= inverse_vid(transfert_matrix, 
                                                     mask_pixel, 
                                                     np.squeeze(mask_noeud),
+                                                    pixels, 
+                                                    noeuds,
                                                     vid,  
                                                     R_noeud, 
                                                     Z_noeud, 
                                                     inversion_method,
                                                     inversion_parameter, 
-                                                    derivative_matrix)
+                                                    folder_inverse_matrix,
+                                                    dict_denoising, 
+                                                    derivative_matrix
+                                                    )
             #save results
         start_time_get_save = time.time()
         idx = [0, inversion_results.shape[0]//2, inversion_results.shape[0]-1]
@@ -544,7 +665,10 @@ def full_inversion_toroidal(nshot,
             fig_results = plot_results_inversion_simplified(inv_image, transfert_matrix, image, mask_pixel, mask_noeud, pixels, noeuds, R_wall, Z_wall, nb_noeuds_r, nb_noeuds_z, R_noeud, Z_noeud, c_c = 3, cmap = 'viridis', norm = 'linear', magflux = sep_map)
 
             fig_results.savefig(name_images_reelles + 'frames'+   '%02d.png' % (frame_input[0]+ i), dpi=180)
+
             plt.close()
+
+
         # np.savez_compressed(path_resultat_inversion + '.npz',  
         #                     inversion_results = inversion_results, 
         #                     images_retrofit = images_retrofit, 
@@ -575,6 +699,23 @@ def full_inversion_toroidal(nshot,
 
         except:
             pdb.set_trace()
+
+        ind_mid = inversion_results.shape[0]//2
+        utility_functions.plot_image(inversion_results_full[ind_mid, :, :].T, origin = 'lower', )
+        plt.savefig(name_images_reelles + 'inv_result.png')
+        plt.close()
+
+        utility_functions.plot_image(inversion_results_thresolded_full[ind_mid, :, :].T, origin = 'lower')
+        plt.savefig(name_images_reelles + 'inv_result_thresholded.png')
+        plt.close()
+
+        utility_functions.plot_image(images_retrofit_full[ind_mid, :, :].T )
+        plt.savefig(name_images_reelles + 'retrofit.png')
+        plt.close()
+
+        utility_functions.plot_image(vid[ind_mid, :, :].T)
+        plt.savefig(name_images_reelles + 'vid.png')
+        plt.close()
 
         #setting video and retrofit back into image convention (rows of the matrix being vertical component, first element of matrix being top left point of the image)
         # vid = np.swapaxes(vid, 1,2)
@@ -799,17 +940,24 @@ def get_vid(time_input, frame_input, path_vid = None, nshot = None, inversion_pa
         image_dim_x = dict_video['daq_parameters']['FrameW']
         fps = dict_video['daq_parameters']['FrameRate']
         images.dtype = 'int16'
-        filter_size = min(10, images.shape[0]//2)
-
-        # images = utility_functions.gaussian_blur_video(images, sigma=5)
-        images_median = ndimage.median_filter(images, size=(filter_size,1,1), mode = 'nearest')
-        images = images-images_median
+        
         frame_input = frame_bounds
         if dict_video['daq_parameters']['TrigType'] == 'Start':
             t_start = dict_video['daq_parameters']['TriggerTime'] + dict_video['daq_parameters']['TriggerDelay']
         else:
             raise(NameError('Time trigger not recognized. Update the get_vid function to handle this new case'))
  
+
+    sigma = inversion_parameter.get('sigma')
+    sigma = sigma or 0
+    if sigma:
+        images = utility_functions.gaussian_blur_video(images, sigma=sigma)
+
+    median = inversion_parameter.get('median')
+    median = median or 0
+    if median:
+        images_median = ndimage.median_filter(images, size=(median,1,1), mode = 'nearest')
+        images = images-images_median
 
     if time_input:
         name_time = 'time' + str(time_input[0]) + '_'   + str(time_input[1])
@@ -884,12 +1032,14 @@ def get_transfert_matrix(mask,
         print("magnetic symmetry")
         revision_mag = dict_transfert_matrix.get('revision')
         revision_mag = revision_mag or 1
-        variant_mag =  dict_transfert_matrix.get('variant')
+        variant_mag =  dict_transfert_matrix.get('variant_mag')
         variant_mag = variant_mag or ''
         eq = plq.cdb(nshot, t_pleque, revision = revision_mag, variant = variant_mag)
         RZwall = np.array([eq.first_wall.R,eq.first_wall.Z]).T
         RZwall =RZwall[:-1, :] 
         RZwall = RZwall[::-1]
+        
+
     wall_limit = axisymmetric_mesh_from_polygon(RZwall)
     R_wall = RZwall[:, 0]
     Z_wall = RZwall[:, 1]
@@ -946,11 +1096,16 @@ def get_transfert_matrix(mask,
     
     #recalculate the extremities of the grid; the grid starts at (r_min, z_min) and its last point is (r_max-dr_grid, z_max-dz_grid)
 
-
    
     if symetry =='magnetic':
+                
+        start = time.time()
         
         FL_MATRIX, dPhirad, phi_min, phi_mem = FL_lookup(eq, phi_grid, cell_r, cell_z, phi_min, phi_max, 0.5e-3, 0.2)
+        end = time.time()
+
+        elapsed = end - start
+        print(f"Magnetic field lines calculation : {elapsed:.3f} seconds")
         grid_precision_multiplier = grid_precision_multiplier or 1
         cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r*grid_precision_multiplier, nb_noeuds_z*grid_precision_multiplier, wall_limit, dict_transfert_matrix)
         grid_mask_precision = grid_mask_precision>0
@@ -1007,6 +1162,7 @@ def get_transfert_matrix(mask,
         print(np.max(plasma.voxel_map))
         # plasma = RayTransferCylinder(R_max_noeud, nb_noeuds_z*dz_grid, nb_noeuds_r*grid_precision_multiplier, nb_noeuds_z*grid_precision_multiplier, radius_inner = R_min_noeud,  parent = world, transform=translate(0., 0., Z_min_noeud), n_polar = n_polar, period = 360, voxel_map = plasma.voxel_map)
         # plasma.voxel_map[~grid_mask] = -1 
+        # pdb.set_trace()
         plasma2 = RayTransferCylinder(
             radius_outer=R_max_noeud,
             radius_inner=R_min_noeud,
@@ -1060,9 +1216,9 @@ def get_transfert_matrix(mask,
     
 
 
-    flag_integrity = verify_integrity(realcam, mask)
-    if not flag_integrity:
-        raise(ValueError('mask of pixel inconsistent with either pixel los or origins'))
+    # flag_integrity = verify_integrity(realcam, mask)
+    # if not flag_integrity:
+    #     raise(ValueError('mask of pixel inconsistent with either pixel los or origins'))
     realcam.observe()
 
     print('shape full transfert matrix = ' + str(real_pipeline.matrix.shape))
@@ -1726,7 +1882,7 @@ def plot_results_inversion_synth(node_full,
                                  Z_noeud, 
                                  R_wall, 
                                  Z_wall):
-    c_c = 3
+    c_c = 2
     inv_image_full = reconstruct_2D_image(inv_image, mask_noeud, nb_noeuds_r, nb_noeuds_z)
     inv_normed_full = reconstruct_2D_image(inv_normed, mask_noeud, nb_noeuds_r, nb_noeuds_z)    
     inv_image_thresolded_full = reconstruct_2D_image(inv_image_thresolded, mask_noeud, nb_noeuds_r, nb_noeuds_z)
@@ -1916,9 +2072,9 @@ def load_results_inversion(loading_folder, name_inversion_results):
 def get_name_machine(machine):
     # get the name of the machine and assure it is the correct syntax in lowercase
     if machine.lower()== 'compass':
-        machine = 'compass'
+        machine = 'COMPASS'
     elif machine.lower()== 'west':
-        machine = 'west'
+        machine = 'WEST'
     else:
         raise Exception('unrecognised machine')
     return machine
@@ -2167,28 +2323,6 @@ def compare_reflection_results_parameters(parameters = None):
     comparison = 1
     return comparison 
 
-def reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion):
-        mask_pixel_out = mask_inversion*(mask_pixel)
-        mask_pixel_out = mask_pixel_out>0
-        visible_pixel = mask_pixel_out.flatten()[pixels]
-        visible_pixel = visible_pixel>0
-
-        pixels_out = pixels[visible_pixel]
-
-        transfert_matrix_out = transfert_matrix[visible_pixel, :]
-        sum_transfert_matrix_out = np.sum(transfert_matrix_out, 0)
-        visible_nodes = np.where(sum_transfert_matrix_out)[1]
-
-        noeuds_out = noeuds[visible_nodes]
-        transfert_matrix_out = transfert_matrix_out[:, visible_nodes]
-        noeuds_mask = np.where(mask_noeud.flatten())[0]
-        # noeuds_mask[visible_nodes]
-        mask_noeud_out =mask_noeud.flatten()
-        mask_noeud_out[:] = 0
-        mask_noeud_out[noeuds_mask[visible_nodes]] = 1
-        mask_noeud_out = mask_noeud_out.reshape(mask_noeud.shape)
-        return transfert_matrix_out, pixels_out, noeuds_out, mask_pixel_out, mask_noeud_out
-
 
 def compare_synth_image(image, image_refl, image_absorb):
     std = np.load('std_noise.npy')
@@ -2207,7 +2341,6 @@ def recreate_retrofit(image, inversion_full, data_refl, data_absorb):
     inversion_refl = inversion_full[data_refl['mask_noeud']]
     inversion_absorb = inversion_full[data_absorb['mask_noeud']]
     
-    # transfert_matrix_absorption = reshape_transfert_matrix(data_absorb['transfert_matrix'], data_absorb['pixels'], data_absorb['noeuds'],data_absorb['mask_pixel'], data_absorb['mask_noeud'], mask_inversion)[0]
     # image_retrofit_absorb = transfert_matrix_absorption.dot(inversion)
     # image_retrofit_full_absorb = reconstruct_2D_image(image_retrofit_absorb, mask_inversion)
     image_retrofit_refl = data_refl['transfert_matrix'].dot(inversion_refl)
@@ -2405,65 +2538,6 @@ def is_point_in_contour(x, y, contour_points):
     contour_path = Path(contour_points)
     return contour_path.contains_point((x, y))
 
-def prep_inversion(mask_noeud, noeuds, mask_pixel, pixels, inversion_parameter, R_noeud, Z_noeud, transfert_matrix):
-    mask_copy = np.squeeze(mask_noeud.copy())
-    noeuds_copy = np.where(mask_copy.flatten())[0]
-    noeuds_flat = noeuds.copy()
-    pixels_flat = np.copy(pixels)
-    if 'zmin' in inversion_parameter.keys():
-        
-        mask_copy[R_noeud>0.84, Z_noeud<inversion_parameter['zmin']] = 0
-        # transfert_matrix[:, mask.flatten()[noeuds]]
-    if 'wallnobaffle' in inversion_parameter.keys():
-        transfert_matrix = transfert_matrix.todense()
-        WALL = loadmat('WALL_LIMITER_NO_BAFFLE.mat')
-        RZWALL = np.array([WALL['R'], WALL['Z']])
-        RZWALL = np.squeeze(RZWALL).T
-        RZWALL = np.flip(RZWALL, 0)
-        wall_limit = axisymmetric_mesh_from_polygon(RZWALL)
-        for i, r in enumerate(R_noeud):
-            for j, z in enumerate(Z_noeud):  
-                pointrz = Point3D(r, 0, z)
-                if not wall_limit.contains(pointrz):          
-                    mask_copy[i, j]= 0
-        noeuds_flat = mask_copy.flatten()[noeuds_copy]
-        noeuds_flat.dtype = bool
-        transfert_matrix = transfert_matrix[:, noeuds_flat]
-        mask_noeud = mask_copy[:, None, :]
-        pixels_flat = np.where(np.sum(transfert_matrix, 1))[0]
-        transfert_matrix = transfert_matrix[pixels_flat, :]
-        mask_pixel_copy = np.zeros_like(mask_pixel).flatten()
-        mask_pixel_copy[pixels[pixels_flat]] = 1
-        mask_pixel = mask_pixel_copy.reshape(mask_pixel.shape)
-    if 'nobaffle' in  inversion_parameter.keys():
-        transfert_matrix = transfert_matrix.todense()
-
-        noR = np.squeeze(R_noeud>2.45)
-        noz = np.squeeze(Z_noeud<-0.72)
-        mask_baffle = noR[:, None] * noz[None, :]
-        mask_copy[mask_baffle] = 0
-        noeuds_flat = mask_copy.flatten()[noeuds_copy]
-        noeuds_flat.dtype = bool
-        transfert_matrix = transfert_matrix[:, noeuds_flat]
-        mask_noeud = mask_copy[:, None, :]
-        pixels_flat = np.where(np.sum(transfert_matrix, 1))[0]
-        transfert_matrix = transfert_matrix[pixels_flat, :]
-        mask_pixel_copy = np.zeros_like(mask_pixel).flatten()
-        mask_pixel_copy[pixels[pixels_flat]] = 1
-        mask_pixel_copy = mask_pixel_copy.reshape(mask_pixel.shape)
-        # add 3rd dimension for toroidal dependency (needs to be done for previous steps, actually useless here)
-        # if mask_noeud.ndim == 3:
-        #     mask_noeud = np.tile(mask_copy, (1, mask_noeud.shape[1], 1))
-        # else:
-        #     mask_noeud = mask_copy[:, None, :]
-    if 'mask_pixel' in inversion_parameter.keys():
-        mask_inversion = np.load('masks/west/'+ inversion_parameter['mask_pixel'] + '.npy')
-        transfert_matrix, pixels_flat, noeuds_flat, mask_pixel, mask_noeud = reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion)
-        pdb.set_trace()
-        
-    return mask_noeud, transfert_matrix, noeuds_flat, mask_pixel, pixels_flat
-
-
 
 
 
@@ -2568,33 +2642,20 @@ def load_transfert_matrix_and_parameters(path_parameters = None, path_transfert_
 
 
 
-def plot_active_nodes(pixel_directions):
-    mask = np.zeros(pixel_directions.shape)
-    for i in range(mask.shape[0]):
-        for j in range(mask.shape[1]):
-            if not np.isnan(pixel_directions[i, j].x):
-                mask[i, j] = 1
 
-
-    utility_functions.plot_image(mask)
-    return mask
-
-
-def verify_integrity(realcam, mask_pixel):
-    flag_integrity = 0
+# def verify_integrity(realcam, mask_pixel):
     for i in range(mask_pixel.shape[0]):
         for j in range(mask_pixel.shape[1]):
             if mask_pixel[i, j] == 1:
                 if np.isnan(realcam.pixel_directions[i, j].x) or np.isnan(realcam.pixel_origins[i, j].x):
-                    return flag_integrity
+                    return False
             elif mask_pixel[i, j] == 0:
                 if not np.isnan(realcam.pixel_directions[i, j].x) or not np.isnan(realcam.pixel_origins[i, j].x):
-                    return flag_integrity
+                    return False
             else:
                 raise('mask data cannot be used to mask pixels of camera. Please check datatype')
 
-    flag_integrity = 1
-    return flag_integrity
+    return True
 
 
 def plot_transfert_matrix_and_synthetic(vmax = None):
@@ -2862,8 +2923,8 @@ def optimize_grid_from_los(realcam, world, pos_camera_RPHIZ):
 
 
 
-def load_mask(path_calibration, path_mask, ignore_mask_calibration):
-    if not ignore_mask_calibration:
+def load_mask(path_calibration, path_mask):
+    if path_mask is None:
         try:
             import calcam
             calcam_camera = calcam.Calibration(path_calibration)
@@ -2898,6 +2959,7 @@ def load_mask(path_calibration, path_mask, ignore_mask_calibration):
                 mask_pixel = fmask["mask"]
             except:
                 mask_pixel = np.load(path_mask)
+    mask_pixel[np.isnan(mask_pixel)] = 0 #handle ill defined mask
     mask_pixel = np.abs(mask_pixel)# handle calcam convention, set all the non zero indices to positive for further process 
     return mask_pixel, name_mask
 
@@ -3002,4 +3064,36 @@ def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_no
 
 
 
+def closest_points(grid_points, query_points):
+    """
+    Find the closest points in a 2D irregular grid for many queries.
+
+    Parameters
+    ----------
+    grid_points : ndarray of shape (N, 2)
+        Array of (x, y) grid points.
+    query_points : ndarray of shape (M, 2)
+        Array of query points (x, y).
+
+    Returns
+    -------
+    closest_idx : ndarray of shape (M,)
+        Indices of the closest grid points.
+    closest_points : ndarray of shape (M, 2)
+        Coordinates of the closest grid points.
+    distances : ndarray of shape (M,)
+        Distances to the closest points.
+    """
+    from scipy.spatial import cKDTree
+
+    tree = cKDTree(grid_points)
+    dists, idxs = tree.query(query_points)
+    return idxs, grid_points[idxs], dists
+
+
+
 __all__ = ["full_inversion_toroidal"]
+
+
+
+
