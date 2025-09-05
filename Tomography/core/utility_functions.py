@@ -261,7 +261,7 @@ def add_variable_to_npz(file_path=None, new_var_name=None, new_var_value=None, o
         output_path = file_path
     
     np.savez(output_path, **data)
-    print(f"Saved updated .npz to {output_path}")
+    # print(f"Saved updated .npz to "{output_path})
 
 
 
@@ -630,3 +630,80 @@ def plot_comparison_synth_inversion_noise_nr_nz(nr, nz, transfert_matrix, mask_n
 
 
 __all__ = ["plot_image"]
+
+
+import numpy as np
+import cv2
+
+def arrays_to_side_by_side_video(arr1, arr2, filename="output.mp4", fps=20, normalize=True):
+    """
+    Create a side-by-side video from two 3D arrays (time, height, width).
+    Adds a time overlay to each frame.
+
+    Parameters
+    ----------
+    arr1 : np.ndarray
+        First array of shape (time, h1, w1).
+    arr2 : np.ndarray
+        Second array of shape (time, h2, w2).
+    filename : str
+        Output video filename (e.g., "output.mp4").
+    fps : int
+        Frames per second.
+    normalize : bool
+        If True, scale arrays to 0-255 for display.
+    """
+    import matplotlib.cm as cm  
+    
+    # Check time dimension
+    if arr1.shape[0] != arr2.shape[0]:
+        raise ValueError("Both arrays must have the same time dimension")
+
+    T = arr1.shape[0]
+    viridis = cm.get_cmap("viridis")
+
+    def to_colored(frame):
+        # Normalize to [0,1]
+        if normalize:
+            frame = (frame - frame.min()) / (frame.ptp() + 1e-9)
+        frame = np.clip(frame, 0, 1)
+
+        # Apply colormap (returns RGBA in [0,1])
+        colored = viridis(frame)[..., :3]  # drop alpha channel
+
+        # Convert to uint8 BGR for OpenCV
+        return (colored * 255).astype(np.uint8)[..., ::-1]
+
+    frames = []
+    for t in range(T):
+        f1 = to_colored(arr1[t])
+        f2 = to_colored(arr2[t])
+
+        # Resize second frame to match first frame height
+        h1, w1 = f1.shape[:2]
+        h2, w2 = f2.shape[:2]
+        if h1 != h2:
+            f2 = cv2.resize(f2, (int(w2 * h1 / h2), h1))
+
+        # Concatenate horizontally
+        combined = np.hstack((f1, f2))
+
+        # Overlay time (seconds based on fps)
+        elapsed_time = t / fps
+        text = f"t = {elapsed_time:.2f} s"
+        cv2.putText(
+            combined, text, (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA
+        )
+
+        frames.append(combined)
+
+    # Video writer
+    h, w = frames[0].shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(filename, fourcc, fps, (w, h))
+
+    for frame in frames:
+        out.write(frame)
+    out.release()
+    print(f"Video saved to {filename}")

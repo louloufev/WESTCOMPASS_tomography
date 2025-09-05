@@ -40,6 +40,7 @@ cd WESTCOMPASS_tomography
 chmod +x inits/init_compass.sh
 inits/init_compass.sh
 
+module load pleque
 
 
 # after setting up the environment, open python in the functions folder

@@ -18,18 +18,16 @@ from Tomography.core.fonction_tomo import full_inversion_toroidal
 ###### path parameters to look for calibrations, 3D models, etc..
 
 # mask for the camera
-path_mask =  '/compass/home/fevre/version_pleque/data_file/15487_mask_20190712.mat'
+path_mask = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/test_mask.npy'
 
-# path_mask = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/test_mask.npy'
-
-ignore_mask_calibration = True # if False, the mask saved in the calcam calibration will be prioritized over the mask from path_mask, unless this parameter is set to true
+ignore_mask_calibration = False # if False, the mask saved in the calcam calibration will be prioritized over the mask from path_mask, unless this parameter is set to true
 
 
 # paths_calibration = [path calibration 1, path calibration 2, ...] : path for calcam camera calibrations. Here it is put in an array to loop over different calibrations for testing
 # if the directory name has already been set in Tomography/ressources/folder_paths.yaml, you only need to put the name of the file, instead of the whole path
 paths_calibration = [
-    # '/compass/home/fevre/WESTCOMPASS_tomography/models_and_calibrations/calibrations/compass/20879_2021_03_31 - first trial.ccc',
-    '/compass/Shared/Common/COMPASS/Diagnostics/Cameras/Calibrations/Calcam calibration/15487-15482/From Alexandra/2022_10_05 - 15487 recalibration_C.ccc',
+    '/compass/home/fevre/WESTCOMPASS_tomography/models_and_calibrations/calibrations/compass/20879_2021_03_31 - first trial.ccc',
+    # '/compass/Shared/Common/COMPASS/Diagnostics/Cameras/Calibrations/Calcam calibration/15487-15482/From Alexandra/2022_10_05 - 15487 recalibration_C.ccc',
 
     # '/compass/Shared/Common/COMPASS/Diagnostics/Cameras/Calibrations/Calcam calibration/15487-15482/From Sarah/15478_last_test_18_10_2021_115.ccc',
         ]
@@ -46,14 +44,14 @@ machine = 'COMPASS'
 symetry = 'magnetic' #hypothesis on the emissivity uniformity. Can be set to 'toroidal'
 
 # parameters for dimension of the 2D plane
-phi_grid = 145 #toroidal angle (in degrees)
+phi_grid = 220 #toroidal angle (in degrees)
 n_polar = 360 # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
 dr_grid = 5e-3 #radius step of 2D grid
 dz_grid = 5e-3 #height step of 2D grid
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
-dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant':'V4_std_O', 'revision':21}
+dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant':'', 'revision':-1}
 
-variant = '2018_11 - with midplane' # parameters for the variant of the 3D model
+variant = 'view_camera' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
 materials = [
         'absorbing_surface', 
@@ -81,10 +79,10 @@ frame_input = [54001, 54400] # number of the frames
             # if both specified, will take time_input over frame_input
 
 # reduce_frame = int;  if the video is too long to inverse, the programm can average over every few frames. Input here how much frames should be averaged.
-reduce_frames = [100, 100, 10, 10, 400, 400, 4] # array to loop over different inversion parameters
+reduce_frames = [10, 100, 10, 10, 400, 400, 4] # array to loop over different inversion parameters
 
 params_fit = ['vid'] # 
-Verbose = False #if set to True, will plot additionnal figures along the raytracing process to vizualize if the process runs well
+Verbose = False #if set to True, will plot additionnal plots along the raytracing process to vizualize if the process runs well
 # can add a long time, best set to false once raytracing gives satisfactory results.
 
 
@@ -92,8 +90,8 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 # parameter for the number of the shot, in this example it is put in an array to loop over it
 
 nshots = [
-    15487,
-    
+    20827,
+    # 15487
     ]
 
 #####
@@ -108,7 +106,7 @@ for k in range(len(materials)): # loop over the raytracing parameters
     for j in range(len(paths_calibration)):
         path_calibration = paths_calibration[j]
         path_CAD = paths_CAD[0]
-        nshot = nshots[j]
+        nshot = nshots[i]
 
         for i in range(len(params_fit)):# loop over the inversion parameters
 
