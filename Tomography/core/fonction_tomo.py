@@ -1142,9 +1142,6 @@ def get_transfert_matrix(mask,
                             raise(ValueError('careful, grid ill defined'))
                         pointrz = Point3D(noeud_r, 0, noeud_z)
                         if grid_mask_precision[i,j]:
-                        # if wall_limit.contains(pointrz):
-                            # print(pointrz)
-                            # print('go')
                             dist = np.sqrt((noeud_r-FL_MATRIX[:, 0, ind_phi_closest])**2+(noeud_z-FL_MATRIX[:, 1, ind_phi_closest])**2)
                             argmin = np.nanargmin(dist)
                             minlos = dist[argmin]
@@ -1395,7 +1392,7 @@ Outter field lines are limited by z planes given be outermost z coordinates of t
             if coords.dim == 2:
                 phi_start = 0
             else:
-                phi_start = coords.phi[i]
+                phi_start = phi_eval[0]
                
             if phi_end is None:
                 phi_end = phi_start 
@@ -1486,6 +1483,7 @@ def FL_lookup(eq, phi_grid, R_noeud, Z_noeud, phi_min, phi_max, IntegrationDista
     dim_fl = int(np.ceil((phi_max-phi_min)/dPhirad))
     phi_mem = np.arange(phi_min, phi_max, dPhirad)
     ind_PHI = int(np.ceil((phi_grid-phi_min)/dPhirad))
+    # phi_mem[ind_PHI-1] = phi_grid
     FL_MATRIX = np.zeros((len(R_noeud)*len(Z_noeud),  2, dim_fl))
     FL_MATRIX[:] = np.NaN
     RZ_noeud_R, RZ_noeud_Z = np.meshgrid(R_noeud, Z_noeud, indexing = 'ij')
