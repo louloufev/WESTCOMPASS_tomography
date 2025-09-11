@@ -358,7 +358,6 @@ def full_inversion_toroidal(nshot,
         dz_grid = np.mean(np.diff(R_noeud))
         # mask_pixel = parameters['mask_pixel']
         # mask_noeud = parameters['mask_noeud']
-        pdb.set_trace()
         transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = prep_inversion(transfert_matrix, mask_pixel, mask_noeud,pixels, noeuds, inversion_parameter, R_noeud, Z_noeud)
         return transfert_matrix, vid, images_retrofit_full, inversion_results_full, inversion_results_thresolded_full, pixels, noeuds, dr_grid, dz_grid, nb_noeuds_r, nb_noeuds_z, RZwall, R_wall, Z_wall, world, full_wall, R_noeud, Z_noeud, mask_pixel, mask_noeud
 
@@ -407,10 +406,6 @@ def full_inversion_toroidal(nshot,
     realcam.min_wavelength = 640
     realcam.max_wavelength = realcam.min_wavelength +1
     realcam.render_engine.processes = 16
-
-    
-    
-
 
     if os.path.exists(path_parameters):
         """
@@ -1017,7 +1012,7 @@ def get_transfert_matrix(mask,
                          path_CAD,
                          variant,
                          phi_grid = None,
-                         grid_precision_multiplier = None,
+                         grid_precision_multiplier = 1,
                          n_polar = 1,
                          t_inv = None):
     """
@@ -1074,7 +1069,6 @@ def get_transfert_matrix(mask,
     extent_RZ =[R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud] 
     nb_noeuds_r = int((R_max_noeud-R_min_noeud)/dr_grid)
     nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/dz_grid)
-    realcam
     cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, dict_transfert_matrix)
     # The RayTransferCylinder object is fully 3D, but for simplicity we're only
     # working in 2D as this case is axisymmetric. It is easy enough to pass 3D
@@ -1085,12 +1079,9 @@ def get_transfert_matrix(mask,
         n_polar = n_polar
     else:
         n_polar = 1
-    grid_mask = grid_mask>0
     RZ_mask_grid = np.copy(grid_mask)
     grid_mask = np.tile(grid_mask, (1, n_polar, 1))
-    # num_cells = vertex_mask.sum()
     num_points_rz = nb_noeuds_r*nb_noeuds_z
-
 
     # R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_min, phi_max = optimize_grid(R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, realcam, phi_grid, RZwall)
     
@@ -1106,60 +1097,31 @@ def get_transfert_matrix(mask,
 
         elapsed = end - start
         print(f"Magnetic field lines calculation : {elapsed:.3f} seconds")
-        grid_precision_multiplier = grid_precision_multiplier or 1
+
+        start = time.time()
         cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r*grid_precision_multiplier, nb_noeuds_z*grid_precision_multiplier, wall_limit, dict_transfert_matrix)
-        grid_mask_precision = grid_mask_precision>0
+        grid_mask_precision = grid_mask_precision[:, np.newaxis, :]
+        grid_mask_precision = np.tile(grid_mask_precision, (1, n_polar, 1))
+        phi_tour = np.linspace(0, 360, n_polar, endpoint = False)
+        grid_mask_precision[:, (phi_tour>phi_min) & (phi_tour<phi_max), :] = False
+
         plasma = RayTransferCylinder(radius_outer = R_max_noeud, 
-                                     height= Z_max_noeud-Z_min_noeud, 
-                                     n_radius = nb_noeuds_r*grid_precision_multiplier, 
-                                     n_height = nb_noeuds_z*grid_precision_multiplier, 
-                                     radius_inner = R_min_noeud,  
-                                     transform=translate(0., 0., Z_min_noeud), 
-                                     n_polar = n_polar, 
-                                     period = 360)
-        # turning angle back into degrees
-        phi_min = phi_min*180/np.pi
-        phi_max = phi_max*180/np.pi
-        # seuil = np.sqrt((plasma.material.dr*grid_precision_multiplier)**2+(plasma.material.dz*grid_precision_multiplier)**2)*3
-        seuil = np.sqrt((np.mean(np.diff(cell_r)))**2+(np.mean(np.diff(cell_z)))**2)
+                                    height= Z_max_noeud-Z_min_noeud, 
+                                    n_radius = nb_noeuds_r*grid_precision_multiplier, 
+                                    n_height = nb_noeuds_z*grid_precision_multiplier, 
+                                    radius_inner = R_min_noeud,  
+                                    transform=translate(0., 0., Z_min_noeud), 
+                                    n_polar = n_polar, 
+                                    mask = grid_mask_precision,
+                                    period = 360)
         
-        plasma.voxel_map[:] = -1 #setting all nodes to blind 
-        for nphi in range(n_polar):
-            if nphi*plasma.material.dphi>phi_max or nphi*plasma.material.dphi<phi_min:
-                plasma.voxel_map[:, nphi, :] = -1
-                print('phi out of range')
-            else:
-                ind_phi_closest = np.round((nphi*plasma.material.dphi-phi_min)/(dPhirad*180/np.pi)).astype('int')
-                #print('phi in range')
-                for i in range(nb_noeuds_r*grid_precision_multiplier):
-                    for j in range(nb_noeuds_z*grid_precision_multiplier):
-                        noeud_r = R_min_noeud + plasma.material.dr*i
-                        noeud_z = Z_min_noeud + plasma.material.dz*j
 
-                        if noeud_r != cell_r_precision[i] or noeud_z != cell_z_precision[j]:
-                            pdb.set_trace()
-
-                            raise(ValueError('careful, grid ill defined'))
-                        pointrz = Point3D(noeud_r, 0, noeud_z)
-                        if grid_mask_precision[i,j]:
-                            dist = np.sqrt((noeud_r-FL_MATRIX[:, 0, ind_phi_closest])**2+(noeud_z-FL_MATRIX[:, 1, ind_phi_closest])**2)
-                            argmin = np.nanargmin(dist)
-                            minlos = dist[argmin]
-
-                            if minlos < seuil:
-                                plasma.voxel_map[i, nphi, j] = argmin
-                            else:
-                                #set the element of the grid to a virtual node (not related to a position R, Z of the 2D map) for debugging
-                                plasma.voxel_map[i, nphi, j] = num_points_rz #careful of indexing, last real point of voxel map is num_points_rz-1
-                                # pdb.set_trace()
-                                # raise(ValueError('element of plasma too far from calculated magnetic lines'))
-                                # plasma.voxel_map[i, nphi, j] = -1
-                        else:
-                            plasma.voxel_map[i, nphi, j] = -1
-        print(np.max(plasma.voxel_map))
         # plasma = RayTransferCylinder(R_max_noeud, nb_noeuds_z*dz_grid, nb_noeuds_r*grid_precision_multiplier, nb_noeuds_z*grid_precision_multiplier, radius_inner = R_min_noeud,  parent = world, transform=translate(0., 0., Z_min_noeud), n_polar = n_polar, period = 360, voxel_map = plasma.voxel_map)
         # plasma.voxel_map[~grid_mask] = -1 
         # pdb.set_trace()
+        # voxel_map = create_voxel_map_from_equilibrium(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit, dict_transfert_matrix)
+        voxel_map = create_voxel_map_from_equilibrium_query(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit, dict_transfert_matrix)
+
         plasma2 = RayTransferCylinder(
             radius_outer=R_max_noeud,
             radius_inner=R_min_noeud,
@@ -1167,8 +1129,8 @@ def get_transfert_matrix(mask,
             n_radius=nb_noeuds_r*grid_precision_multiplier, 
             n_height=nb_noeuds_z*grid_precision_multiplier,  
             n_polar=n_polar,
-            mask = grid_mask,
-            voxel_map = plasma.voxel_map,
+            mask = grid_mask_precision,
+            voxel_map = voxel_map,
             period = 360,
             parent = world,
             transform=translate(0, 0, Z_min_noeud)
@@ -1195,7 +1157,7 @@ def get_transfert_matrix(mask,
         plt.imshow(np.sum(plasma.voxel_map, 1).T, extent= extent_RZ, origin = 'lower' )
         plt.show(block = False)
         plt.savefig(main_folder_image + '2D_voxel_map.png')
-
+    
     #calculate inversion matrix
     print(plasma2.bins)
     print(num_points_rz)
@@ -1211,6 +1173,10 @@ def get_transfert_matrix(mask,
         create_synth_cam_emitter(realcam, full_wall, R_wall, Z_wall, mask, path_CAD, variant = variant)
     
     
+    end = time.time()
+
+    elapsed = end - start
+    print(f"Magnetic field lines assignation : {elapsed:.3f} seconds")
 
 
     # flag_integrity = verify_integrity(realcam, mask)
@@ -1225,7 +1191,7 @@ def get_transfert_matrix(mask,
         #some elements of the grid don't see the field lines. Checking if they are out of the field of view of the camera
         invisible_nodes = np.sum(flattened_matr, 0)[-1]
         if invisible_nodes>0:
-            print('nodes not seen, choose bigger grid limits')
+            print('nodes not seen, choose bigger grid limits, or wall limits differ between CAD model and magnetic equilibrium')
             # pdb.set_trace()
         flattened_matr = flattened_matr[:, :-1]
     print('flattened_matr shape', flattened_matr.shape)
@@ -1482,6 +1448,7 @@ def FL_lookup(eq, phi_grid, R_noeud, Z_noeud, phi_min, phi_max, IntegrationDista
     phi_min = phi_min-dPhirad
     dim_fl = int(np.ceil((phi_max-phi_min)/dPhirad))
     phi_mem = np.arange(phi_min, phi_max, dPhirad)
+    dPhirad = np.mean(np.diff(phi_mem))
     ind_PHI = int(np.ceil((phi_grid-phi_min)/dPhirad))
     # phi_mem[ind_PHI-1] = phi_grid
     FL_MATRIX = np.zeros((len(R_noeud)*len(Z_noeud),  2, dim_fl))
@@ -2908,11 +2875,11 @@ def optimize_grid_from_los(realcam, world, pos_camera_RPHIZ):
         for j in range(RPHIZ.shape[1]):
 
             R_min, R_max, Z_min, Z_max = utility_functions.find_RZextrema_between_2_points(pos_camera_RPHIZ, RPHIZ[i, j, :])
-                    
             R_min_noeud = min(R_min_noeud, R_min)
             R_max_noeud = max(R_max_noeud, R_max)
             Z_min_noeud = min(Z_min_noeud, Z_min)
             Z_max_noeud = max(Z_max_noeud, Z_max)
+    
     phi_min = min(pos_camera_RPHIZ[1], np.nanmin(RPHIZ[:, :, 1]))
     phi_max = max(pos_camera_RPHIZ[1], np.nanmax(RPHIZ[:, :, 1]))
     
@@ -3058,6 +3025,7 @@ def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_no
     # Cell is included if at least one vertex is within the wall
     grid_mask = (vertex_mask[1:, :-1] + vertex_mask[:-1, :-1]
                 + vertex_mask[1:, 1:] + vertex_mask[:-1, 1:])
+    grid_mask=grid_mask>0
     return cell_r, cell_z, grid_mask, cell_dr, cell_dz
 
 
@@ -3086,12 +3054,93 @@ def closest_points(grid_points, query_points):
 
     tree = cKDTree(grid_points)
     dists, idxs = tree.query(query_points)
-    return idxs, grid_points[idxs], dists
-
-
-
-__all__ = ["full_inversion_toroidal"]
+    return idxs, grid_points, dists
 
 
 
 
+
+
+
+def create_voxel_map_from_equilibrium(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit, dict_transfert_matrix):
+
+    # turning angle back into degrees
+
+    nb_noeuds_r = len(cell_r_precision)
+    nb_noeuds_z = len(cell_z_precision)
+
+    phi_min = phi_mem[0]*180/np.pi
+    phi_max = phi_mem[-1]*180/np.pi
+    # seuil = np.sqrt((plasma.material.dr*grid_precision_multiplier)**2+(plasma.material.dz*grid_precision_multiplier)**2)*3
+    seuil = np.sqrt((np.mean(np.diff(cell_r_precision)))**2+(np.mean(np.diff(cell_z_precision)))**2)
+    n_polar = plasma.material.grid_shape[1]
+    voxel_map = -1*np.ones_like(plasma.voxel_map) #setting all nodes to blind 
+    for nphi in range(n_polar):
+        if nphi*plasma.material.dphi>phi_max or nphi*plasma.material.dphi<phi_min:
+            voxel_map[:, nphi, :] = -1
+            # print('phi out of range')
+        else:
+            ind_phi_closest = np.round((nphi*plasma.material.dphi-phi_min)/(dPhirad*180/np.pi)).astype('int')
+            #print('phi in range')
+            for i in range(nb_noeuds_r):
+                for j in range(nb_noeuds_z):
+                    noeud_r = cell_r_precision[0] + plasma.material.dr*i
+                    noeud_z = cell_z_precision[0] + plasma.material.dz*j
+
+                    if noeud_r != cell_r_precision[i] or noeud_z != cell_z_precision[j]:
+                        pdb.set_trace()
+
+                        raise(ValueError('careful, grid ill defined'))
+                    pointrz = Point3D(noeud_r, 0, noeud_z)
+                    if grid_mask_precision[i,j]:
+                        dist = np.sqrt((noeud_r-FL_MATRIX[:, 0, ind_phi_closest])**2+(noeud_z-FL_MATRIX[:, 1, ind_phi_closest])**2)
+                        argmin = np.nanargmin(dist)
+                        minlos = dist[argmin]
+
+                        if minlos < seuil:
+                            voxel_map[i, nphi, j] = argmin
+                        else:
+                            #set the element of the grid to a virtual node (not related to a position R, Z of the 2D map) for debugging
+                            voxel_map[i, nphi, j] = nb_noeuds_z*nb_noeuds_r #careful of indexing, last real point of voxel map is num_points_rz-1
+                            # pdb.set_trace()
+                            # raise(ValueError('element of plasma too far from calculated magnetic lines'))
+                            # plasma.voxel_map[i, nphi, j] = -1
+                    else:
+                        voxel_map[i, nphi, j] = -1
+    print(np.max(voxel_map))
+    return voxel_map
+
+
+
+def create_voxel_map_from_equilibrium_query(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit, dict_transfert_matrix):
+
+    # turning angle back into degrees
+
+    nb_noeuds_r = len(cell_r_precision)
+    nb_noeuds_z = len(cell_z_precision)
+    R, Z = np.meshgrid(cell_r_precision, cell_z_precision, indexing = 'ij')
+
+    phi_min = phi_mem[0]*180/np.pi
+    phi_max = phi_mem[-1]*180/np.pi
+    # seuil = np.sqrt((plasma.material.dr*grid_precision_multiplier)**2+(plasma.material.dz*grid_precision_multiplier)**2)*3
+    seuil = np.sqrt((np.mean(np.diff(cell_r_precision)))**2+(np.mean(np.diff(cell_z_precision)))**2)
+    n_polar = plasma.material.grid_shape[1]
+    voxel_map = -1*np.ones_like(plasma.voxel_map) #setting all nodes to blind 
+    query_points = np.column_stack((R.flatten(), Z.flatten()))
+
+    for nphi in range(n_polar):
+        if nphi*plasma.material.dphi>phi_max or nphi*plasma.material.dphi<phi_min:
+            voxel_map[:, nphi, :] = -1
+            # print('phi out of range')
+        else:
+        
+            ind_phi_closest = np.round((nphi*plasma.material.dphi-phi_min)/(dPhirad*180/np.pi)).astype('int')
+            #print('phi in range')
+            grid_points = FL_MATRIX[:, :, ind_phi_closest] 
+
+            idxs, _,  dists = closest_points(grid_points, query_points)
+            voxel_map[:, nphi, :] = idxs.reshape(nb_noeuds_r, nb_noeuds_z)
+
+    voxel_map[np.invert(grid_mask_precision)] = -1
+    print(np.max(voxel_map))
+    return voxel_map

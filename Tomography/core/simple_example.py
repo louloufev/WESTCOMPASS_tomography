@@ -38,7 +38,7 @@ n_polar = 360 # number of toroidal points in 1 revolution for magnetic lines(onl
 dr_grid = 2e-3 #radius step of 2D grid
 dz_grid = 2e-3 #height step of 2D grid
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
-dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant_mag':'V4_std_O', 'revision':21}
+dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant_mag':'V4_std_O', 'revision':21, 'test':'func'}
 dict_denoising = {'c_c' :3, 'sigma' : 5, 'median' : 10}
 variant = '2018_11 - with midplane' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
@@ -50,8 +50,8 @@ name_material =     'absorbing_surface'
 ###### inversion parameters : if a geometry matrix has already been measured with the previous parameters, will skip the raytracing and go straight into the inversion
 
 inversion_method = 'SparseBob' # see inversion_and_thresolding function in inversion_module module for list of choices 
-inversion_parameter = {'min_visibility_node': 1}
-# inversion_parameter = {}
+# inversion_parameter = {'min_visibility_node': 1}
+inversion_parameter = {}
 
     # min_visibility_node : 
 
