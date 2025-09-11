@@ -200,7 +200,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
 
         try:
             inversion.load_decomposition(path_inverse_matrix)
-            print('successefully loaded inverse matrix')
+            print('successfully loaded inverse matrix')
         except:
             inversion.decompose(transfert_matrix, simple_base, solver_kw = inversion_parameter)
             inversion._normalise_wo_mat()
@@ -248,7 +248,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
 
         try:
             inversion.load_decomposition(path_inverse_matrix)
-            print('successefully loaded inverse matrix')
+            print('successfully loaded inverse matrix')
         except:
             inversion.decompose(transfert_matrix, simple_base)
             inversion._normalise_wo_mat()
@@ -649,7 +649,9 @@ def prep_inversion(transfert_matrix, mask_pixel, mask_noeud, pixels, noeuds, inv
         transfert_matrix[:, relevant_nodes] = 0
         transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = reindex_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud)
     if 'node_min_value' in inversion_parameter.keys():
-        transfert_matrix, pixels_flat, noeuds_flat, mask_pixel, mask_noeud = reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion)
+        node_min_value = inversion_parameter.get('node_min_value')
+        transfert_matrix[transfert_matrix<node_min_value] = 0
+        transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = reindex_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud)
 
 
     # if 'zmin' in inversion_parameter.keys():
