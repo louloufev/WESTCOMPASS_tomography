@@ -38,8 +38,8 @@ n_polar = 360 # number of toroidal points in 1 revolution for magnetic lines(onl
 dr_grid = 2e-3 #radius step of 2D grid
 dz_grid = 2e-3 #height step of 2D grid
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
-dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant_mag':'V4_std_O', 'revision':21, 'test':'func'}
-dict_denoising = {'c_c' :3, 'sigma' : 5, 'median' : 10}
+dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant_mag':'V4_std_O', 'revision':21, 'test':'angle2'}
+dict_denoising = {'c_c' :3, 'sigma' : 2, 'median' : 10}
 variant = '2018_11 - with midplane' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
 name_material =     'absorbing_surface'
@@ -49,9 +49,9 @@ name_material =     'absorbing_surface'
 
 ###### inversion parameters : if a geometry matrix has already been measured with the previous parameters, will skip the raytracing and go straight into the inversion
 
-inversion_method = 'SparseBob' # see inversion_and_thresolding function in inversion_module module for list of choices 
-# inversion_parameter = {'min_visibility_node': 1}
-inversion_parameter = {}
+inversion_method = 'Bob' # see inversion_and_thresolding function in inversion_module module for list of choices 
+inversion_parameter = {'min_visibility_node': 1, 'rcond':1e-4}
+# inversion_parameter = {}
 
     # min_visibility_node : 
 
@@ -61,9 +61,11 @@ decimation = 1 # int : used to average camera data into blocks of pixels; useful
 
 
 
-# input for video : specify what section of the video to load.  
-time_input = None # [t0, t1] in milliseconds
-frame_input = [54001, 54400] # number of the frames
+# input for video : specify what section of the video to load. 
+time_input = [1150, 1250]
+# time_input = None # [t0, t1] in milliseconds
+frame_input = None
+# frame_input = [54001, 54400] # number of the frames
             # if left at none, will treat the whole video
             # if both specified, will take time_input over frame_input
 
@@ -74,16 +76,13 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 
 
 
-# parameter for the number of the shot, in this example it is put in an array to loop over it
+# parameter for the number of the shot
 
 nshot =15487
 path_vid = None
 
 
 #####
-
-# Since the programm does not need to repeat the raytracing if the raytracing parameters stay the same,
-# it might be useful to do 2 loops, one on the raytracing parameters, the other on the inversion parameters
 
 
 
@@ -106,7 +105,9 @@ full_wall,
 R_noeud, 
 Z_noeud, 
 mask_pixel,
-mask_noeud] = full_inversion_toroidal(nshot, 
+mask_noeud,
+path_parameters, 
+path_transfert_matrix] = full_inversion_toroidal(nshot, 
                                                 path_calibration, 
                                                 path_mask, 
                                                 path_wall, 
