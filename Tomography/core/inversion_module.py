@@ -193,7 +193,9 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         inversion = Bob()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(transfert_matrix)
-
+        rcond = inversion_parameter.get('rcond')
+        solver_dict = {'rcond' : rcond}
+        
 
         path_inverse_matrix = folder_inverse_matrix + 'inverse_matrix'
         path_norm_matrix = folder_inverse_matrix + 'norm'
@@ -202,7 +204,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
             inversion.load_decomposition(path_inverse_matrix)
             print('successfully loaded inverse matrix')
         except:
-            inversion.decompose(transfert_matrix, simple_base, solver_kw = inversion_parameter)
+            inversion.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
             inversion._normalise_wo_mat()
 
         inversion.save_decomposition(path_inverse_matrix)
