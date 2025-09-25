@@ -11,6 +11,7 @@ from raysect.core.math.polygon import triangulate2d
 from cherab.tools.raytransfer import RayTransferPipeline2D, RayTransferCylinder
 from cherab.tools.raytransfer import RoughNickel, RoughTungsten
 import os 
+
 from raysect.primitive import Cylinder, Subtract
 from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
 from cherab.tools.inversions import invert_regularised_nnls
@@ -28,7 +29,7 @@ from . import utility_functions, result_inversion
 import tkinter as tk
 from tkinter import filedialog
 
-from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified
+from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified, inverse_vid_from_class
 from Tomography.ressources import components, paths
 
 #### yaml files
@@ -53,31 +54,7 @@ main_folder_calibration = paths["main_folder_calibration"]
 main_folder_CAD = paths["main_folder_CAD"]
 main_folder_processing = paths["main_folder_processing"]
 
-def full_inversion_toroidal(nshot, 
-                            path_calibration, 
-                            path_mask, 
-                            path_wall, 
-                            machine, 
-                            symetry,
-                            time_input = None, 
-                            frame_input = None, 
-                            dr_grid = 1e-2, 
-                            dz_grid = 1e-2, 
-                            verbose = 0, 
-                            inversion_method = 'lstsq', 
-                            name_material = 'absorbing_surface', 
-                            path_vid = None, 
-                            path_CAD = None,
-                            variant = 'Default',
-                            inversion_parameter = {"rcond" : 1e-3}, 
-                            phi_grid = None, 
-                            decimation = 1, 
-                            param_fit = None,  
-                            dict_transfert_matrix = {}, 
-                            dict_denoising = {'c_c' :3, 'sigma' : 0, 'median' : 10},
-                            synth_inv_flag = 0, 
-                            real_inv_flag = 1, 
-                            n_polar = 1):
+def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     """
     This function does the inversion for a given shot, for a given time or frame span.
     It only needs access to the video, its mask, the calibration of the camera, and the CAD model of the machine or the coordinates of the wall
@@ -203,181 +180,88 @@ def full_inversion_toroidal(nshot,
 
     """
     #import functions
-    kwargs = locals()
     #create folder where to save the outputs
     start_time_get_parameters = time.time()
     #import input parameters
-    name_calib = get_name(path_calibration)
-    name_wall = get_name(path_wall)
-    name_machine = get_name_machine(machine)
-    grid_precision_multiplier = dict_transfert_matrix.get('grid_precision_multiplier')
-    if not path_vid:
+    
+    if not ParamsVid.path_vid:
         path_vid = 'None'
     #import camera calibrations
     world = World()
     real_pipeline = RayTransferPipeline2D()
 
 
-    realcam = load_camera(path_calibration)
-    if name_machine == 'WEST':
-        check_shot_and_video(nshot, path_vid)
-    mask_pixel, name_mask = load_mask(path_calibration, path_mask)
+    realcam = load_camera(ParamsMachine.path_calibration)
+    if ParamsMachine.machine == 'WEST':
+        check_shot_and_video(ParamsVid.nshot, path_vid)
+    mask_pixel, name_mask = load_mask(ParamsMachine.path_calibration, ParamsMachine.path_mask)
 
     #load image data
     ##### handle the cases for treating simple images
     [name_vid, ext] = os.path.splitext(path_vid)
 
 #check surface
-    name_material, wall_material = recognise_material(name_material)
-    if path_CAD:
+    name_material, wall_material = recognise_material(ParamsMachine.name_material)
+    if ParamsMachine.path_CAD:
         type_wall = 'CAD'
-        name_CAD = os.path.splitext(os.path.basename(path_CAD))[0]
-        if not os.path.exists(path_CAD):
+        name_CAD = os.path.splitext(os.path.basename(ParamsMachine.path_CAD))[0]
+        if not os.path.exists(ParamsMachine.path_CAD):
             # if os.path.dirname(path_CAD) != main_folder_CAD:
-            path_CAD = main_folder_CAD + path_CAD
+            path_CAD = main_folder_CAD + ParamsMachine.path_CAD
 
     else:
         type_wall = 'coords'
         name_CAD = 'coords'
 
 
-    if not phi_grid:
+    if not ParamsGrid.phi_grid:
         n_polar = 1
     else:
-        n_polar = n_polar
-
-    main_name_parameters = ( 
-        'mask_' + name_mask + 
-        '_calibration_' + name_calib+ 
-        '_wall_' + name_CAD + 
-        '_material_' + name_material + 
-        '_dz_' + str(int(dz_grid*1e3)) + 
-        '_dr_' + str(int(dr_grid*1e3)) + 
-        '_decimation_' + str(decimation)
-    )
-    pairs_str = "_".join(f"{k}_{v}" for k, v in dict_transfert_matrix.items())
-    secondary_name_parameters = (
-        'cropping_' + str(param_fit) + 
-        '_reflexion_dict_' + pairs_str +
-        '_npolar_' +str(n_polar)
-    )
-#read path of folders
-    
-
-    name_parameters = main_name_parameters + '/' + secondary_name_parameters
-    #prepare path and folder to save the data
-    # path of parameters and inversion
-    folder_parameters = main_folder_processing + name_machine + '/' + str(nshot)+  '/' + name_parameters + '/'
-    path_parameters = folder_parameters + 'parameters.npz'
-    path_transfert_matrix = folder_parameters +  'transfert_matrix.npz'
-    os.makedirs(folder_parameters, exist_ok=True)
+        n_polar = ParamsGrid.n_polar
 
 
-    # path inverse matrix
-    name_dict_parameter_inversion = get_name_parameters_inversion(inversion_parameter)
-    name_inversion = 'inversion_method_' +str(inversion_method)+ '_inversion_parameter_' + name_dict_parameter_inversion
- 
-    folder_inverse_matrix = folder_parameters + name_inversion + '/'
- 
-    os.makedirs(folder_inverse_matrix, exist_ok = True)
+# #loading wall coordinates
+#     try:
+#         fwall = loadmat(ParamsMachine.path_wall)
+#         RZwall = fwall['RZwall']
 
+#     except:
+#         RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
+#     #check that the last element is the neighbor of the first one and not the same one
+#     if(RZwall[0]==RZwall[-1]).all():
+#         RZwall = RZwall[:-1]
+#         print('erased last element of wall')
+#     #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
+#     R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
+#     Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
+#     theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
+#     theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
+#     print(RZwall[:5])
+#     # if theta2-theta1<0:
+#     #     RZwall = RZwall[::-1]
+#     #     print('wall reversed')
+#     print(RZwall[:5])
+#     R_wall = RZwall[:, 0]
+#     Z_wall = RZwall[:, 1]
 
-    # path of inversion results
-    pairs_str = "_".join(f"{k}_{v}" for k, v in dict_denoising.items())
-    name_parameters_vid = (
-        'denoising' + pairs_str 
-    )
-    name_vid = os.path.basename(path_vid)
-    folder_save_result = folder_inverse_matrix + name_parameters_vid + '/'
-    os.makedirs(folder_save_result, exist_ok = True)
-    name_span_vid = '_full_vid'
-    if frame_input:
-        name_span_vid = '_frames'+ str(frame_input[0]) + '_'+ str(frame_input[1])
-    if time_input:
-        name_span_vid = '_times'+ str(time_input[0]) + '_'+ str(time_input[1])
-
-
-    name_resultat_inversion =  'vid_' + name_vid + name_span_vid
-    save_resultat_inversion = folder_save_result + name_resultat_inversion
-
-
-    # path images
-    folder_images_reelles =  folder_save_result + 'images_reelles/' 
-    os.makedirs(folder_images_reelles, exist_ok=True)
-    name_images_reelles = folder_images_reelles + 'vid_' + str(name_vid)
-
-    folder_images_synthetiques = folder_save_result + 'images_synthetiques/' 
-    os.makedirs(folder_images_synthetiques, exist_ok=True)
-    name_images_synthetiques = folder_images_synthetiques + 'vid_' + str(name_vid)
-
-#loading wall coordinates
     try:
-        fwall = loadmat(path_wall)
-        RZwall = fwall['RZwall']
+        Inversion_results = result_inversion.Inversion_results({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid, ParamsVid=ParamsVid)
+        Inversion_results = Inversion_results.load()
 
+        return Inversion_results
     except:
-        RZwall = np.load(path_wall, allow_pickle=True)
-    #check that the last element is the neighbor of the first one and not the same one
-    if(RZwall[0]==RZwall[-1]).all():
-        RZwall = RZwall[:-1]
-        print('erased last element of wall')
-    #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
-    R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
-    Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
-    theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
-    theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
-    print(RZwall[:5])
-    # if theta2-theta1<0:
-    #     RZwall = RZwall[::-1]
-    #     print('wall reversed')
-    print(RZwall[:5])
-    R_wall = RZwall[:, 0]
-    Z_wall = RZwall[:, 1]
-
-    if os.path.exists(save_resultat_inversion + '.mat'):
-        dict_results = loadmat(save_resultat_inversion + '.mat')
-        inversion_results_full = dict_results['inversion_results_full']
-        inversion_results_thresolded_full = dict_results['inversion_results_thresolded_full']
-        images_retrofit_full = dict_results['images_retrofit_full']
-        mask_pixel = dict_results['mask_pixel']
-        mask_noeud = dict_results['mask_noeud']
-        pixels = dict_results['pixels']
-        noeuds = dict_results['noeuds']
-        frame_input = dict_results['frame_input']
-        t_start = dict_results['t_start']
-        t0 = dict_results['t0']
-        t_inv = dict_results['t_inv']
-        # path_transfert_matrix = dict_results['path_transfert_matrix']
-        # path_parameters = dict_results['path_parameters']
-        path_vid = dict_results['path_vid']
-        vid = dict_results['vid']
-        transfert_matrix = load_npz(path_transfert_matrix)
-        path_parameters_save, ext = os.path.splitext(path_parameters)
-        parameters = loadmat(path_parameters_save)
-        pixels = parameters['pixels']
-        noeuds = parameters['noeuds']
+        print('no previous results found')
         
-        nb_noeuds_r = parameters['nb_noeuds_r']
-        nb_noeuds_z = parameters['nb_noeuds_z']
-        world = World()
-        full_wall = axisymmetric_mesh_from_polygon(RZwall)
-        R_noeud = parameters['R_noeud']
-        Z_noeud = parameters['Z_noeud']
-        dr_grid = np.mean(np.diff(R_noeud))
-        dz_grid = np.mean(np.diff(R_noeud))
-        # mask_pixel = parameters['mask_pixel']
-        # mask_noeud = parameters['mask_noeud']
-        transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = prep_inversion(transfert_matrix, mask_pixel, mask_noeud,pixels, noeuds, inversion_parameter, R_noeud, Z_noeud)
-        return transfert_matrix, vid, images_retrofit_full, inversion_results_full, inversion_results_thresolded_full, pixels, noeuds, dr_grid, dz_grid, nb_noeuds_r, nb_noeuds_z, RZwall, R_wall, Z_wall, world, full_wall, R_noeud, Z_noeud, mask_pixel, mask_noeud, path_parameters, path_transfert_matrix
-
     if ext == '.png':
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(path_vid = path_vid, nshot = nshot)
+        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(ParamsVid)
         t0 = 0
         tstart = 0
         tinv = 0
     ####
     else: #load videos
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = get_vid(time_input, frame_input, path_vid = path_vid, nshot = nshot, inversion_parameter=dict_denoising)
+        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = get_vid(ParamsVid)
+    Inversion_results = result_inversion.Inversion_results({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid, ParamsVid=ParamsVid)
+    Inversion_results.t_inv = t_inv
     #load mask, check size
     utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid.png')
     utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam.gif', num_frames=100, cmap='gray')
@@ -385,19 +269,19 @@ def full_inversion_toroidal(nshot,
     vid = np.swapaxes(vid, 1,2)
     utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
 
-    if machine == 'WEST':
+    if ParamsMachine.machine == 'WEST':
         vid = np.swapaxes(vid, 1,2)
-        if image_dim_y == mask_pixel.shape[0] and param_fit==None:
+        if image_dim_y == mask_pixel.shape[0] and ParamsMachine.param_fit==None:
             vid = np.swapaxes(vid, 1,2)
         
         utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
 
-    realcam, mask_pixel, vid = fit_size_all(realcam, mask_pixel, vid, param_fit)
+    realcam, mask_pixel, vid = fit_size_all(realcam, mask_pixel, vid, ParamsMachine.param_fit)
     utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rezizing.gif', num_frames=100, cmap='viridis')
 
 
-    if decimation != 1:
-        realcam, mask_pixel, vid = reduce_camera_precision(realcam, mask_pixel, vid, decimation = decimation)
+    if ParamsMachine.decimation != 1:
+        realcam, mask_pixel, vid = reduce_camera_precision(realcam, mask_pixel, vid, decimation = ParamsMachine.decimation)
         utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_decimation.gif', num_frames=100, cmap='viridis')
 
     # corner_min_y, corner_max_y,corner_min_x, corner_max_x = FULL_MASK(mask,realcam.pixel_origins.shape[0],realcam.pixel_origins.shape[1],0,path_mask)
@@ -415,378 +299,85 @@ def full_inversion_toroidal(nshot,
     realcam.min_wavelength = 640
     realcam.max_wavelength = realcam.min_wavelength +1
     realcam.render_engine.processes = 16
-
-    if os.path.exists(path_parameters):
-        """
-        f = h5py.File(name_transfert_matrix+'.hdf5', 'r')
-        R_noeud = f["R_noeud"][()]
-        Z_noeud = f["Z_noeud"][()]
-        R_max_noeud = f["R_max_noeud"][()]
-        R_min_noeud = f["R_min_noeud"][()]
-        Z_max_noeud = f["Z_max_noeud"][()]
-        Z_min_noeud = f["Z_min_noeud"][()]
-        seuil = f["seuil"][()]
-        #FL_MATRIX = f["FL_MATRIX"][()]
-        #phi_max = f["phi_max"][()]
-        #phi_min = f["phi_min"][()]
-        dPhirad = f["dPhirad"][()]
-        pixels = f["pixels"][()]
-        noeuds = f["noeuds"][()]
-        f.close()
-        StepsInPhi = dPhirad*180/np.pi
-        """
-        [transfert_matrix, 
-            pixels,
-            noeuds, 
-            nb_noeuds_r, 
-            nb_noeuds_z, 
-            R_max_noeud, 
-            R_min_noeud, 
-            Z_max_noeud, 
-            Z_min_noeud, 
-            R_noeud,
-            Z_noeud, 
-            mask_pixel, 
-            mask_noeud,
-            path_parameters_new] = load_transfert_matrix_and_parameters(path_parameters = path_parameters, path_transfert_matrix = path_transfert_matrix)
-        if path_parameters_new != path_parameters:
-            print('something went wrong with the loading of parameters')
-            pdb.set_trace()
-        
+    try:
+        Transfert_Matrix = result_inversion.Transfert_Matrix({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid)
+        Transfert_Matrix = Transfert_Matrix.load()
+        print('found already calculated transfert matrix')
         #skips the loading of the walls, go straight to inversion
-    else:
+    except:
 
         #load wall models
         # check how the wall is described; either CAD or coord
         
-        if path_CAD:
+        if ParamsMachine.path_CAD:
             try:
-                full_wall, name_material = read_CAD_from_calcam_module(path_CAD, world, name_material, wall_material, variant = variant)
+                full_wall, name_material = read_CAD_from_calcam_module(ParamsMachine.path_CAD, world, name_material, wall_material, variant = ParamsMachine.variant_CAD)
             except:
-                full_wall, name_material = read_CAD(path_CAD, world, name_material, wall_material, variant = variant)
+                full_wall, name_material = read_CAD(ParamsMachine.path_CAD, world, name_material, wall_material, variant = ParamsGrid.variant_mag)
         else: 
             full_wall = axisymmetric_mesh_from_polygon(RZwall)
             full_wall.material = wall_material
             full_wall.parent = world
         #calculate transfert matrix
-        [transfert_matrix, 
-         pixels, 
-         noeuds, 
-         R_noeud, 
-         Z_noeud, 
-         nb_noeuds_r, 
-         nb_noeuds_z, 
-         mask_pixel, 
-         mask_noeud,
-         phi_tour] = get_transfert_matrix(mask_pixel, 
-                                            realcam, 
-                                            real_pipeline, 
-                                            RZwall, 
-                                            dr_grid, 
-                                            dz_grid, 
-                                            image_dim_y,
-                                            image_dim_x, 
-                                            world, 
-                                            full_wall, 
-                                            verbose, 
-                                            path_transfert_matrix, 
-                                            path_parameters, 
-                                            symetry, 
-                                            nshot,
-                                            dict_transfert_matrix, 
-                                            path_CAD,
-                                            variant,
-                                            phi_grid,
-                                            grid_precision_multiplier = grid_precision_multiplier,
-                                            n_polar=n_polar,
-                                            t_inv = t_inv)
+        Transfert_Matrix = result_inversion.Transfert_Matrix({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid)
+        Transfert_Matrix.mask_pixel = mask_pixel
+        Transfert_Matrix = get_transfert_matrix(Transfert_Matrix, realcam,  world, ParamsMachine, ParamsGrid, ParamsVid, Inversion_results)
     end_time_get_parameters = time.time()-start_time_get_parameters
+
     start_time_get_equilibrium = time.time()
 
-    if name_machine == 'WEST':
-        magflux = imas_west.get(nshot, 'equilibrium', 0, 1)
-        
-        t = pywed.tsbase(nshot, 'RIGNITRON', nargout = 1)[0][0]
-        magflux.time = magflux.time-t
-
-        derivative_matrix = get_derivative_matrix(inversion_method, R_noeud, Z_noeud, magflux)
-        derivative_matrix = 0
-    else:
-        magflux = 0
-        t = 0
-        derivative_matrix = 0
 
     # if derivative_matrix:
     #     derivative_matrix = [[matrix[noeuds, :][:, noeuds] for matrix in sublist] for sublist in derivative_matrix]
     end_time_get_equilibrium = time.time()-start_time_get_equilibrium
-    #make a synthetic inversion to check results
-    print(mask_noeud)
-    print(mask_noeud.shape)
+    
 
 
 
-
-    if synth_inv_flag:
-        if inversion_method == 'Cholmod' or inversion_method == 'Mfr_Cherab':
-            (node_full, 
-                inv_image_synth, 
-                inv_normed_synth, 
-                inv_image_thresolded_synth, 
-                inv_image_thresolded_normed_synth, 
-                image_retrofit_synth, 
-                image_full_noise, 
-                image_full) = call_module2_function("synth_inversion", 
-                                                    transfert_matrix, 
-                                                    mask_pixel, 
-                                                    mask_noeud,
-                                                    pixels, 
-                                                    noeuds, 
-                                                    nb_noeuds_r, 
-                                                    nb_noeuds_z,
-                                                    R_noeud, 
-                                                    Z_noeud, 
-                                                    R_wall, 
-                                                    Z_wall, 
-                                                    inversion_method, 
-                                                    derivative_matrix)
-            
-        
-            synth_inv_plot = plot_results_inversion_synth(node_full, 
-                                    inv_image_synth, 
-                                    inv_normed_synth, 
-                                    inv_image_thresolded_synth, 
-                                    inv_image_thresolded_normed_synth, 
-                                    image_retrofit_synth, 
-                                    image_full_noise, 
-                                    image_full,
-                                    mask_pixel, 
-                                    mask_noeud, 
-                                    nb_noeuds_r, 
-                                    nb_noeuds_z, 
-                                    R_noeud, 
-                                    Z_noeud, 
-                                    R_wall, 
-                                    Z_wall)
-            synth_inv_plot.savefig(name_images_synthetiques + '.png')
-            plt.close()
-        else:
-            (node_full, 
-                inv_image_synth, 
-                inv_normed_synth, 
-                inv_image_thresolded_synth, 
-                inv_image_thresolded_normed_synth, 
-                image_retrofit_synth, 
-                image_full_noise, 
-                image_full) = synth_inversion(transfert_matrix, 
-                                                    mask_pixel, 
-                                                    mask_noeud,
-                                                    pixels, 
-                                                    noeuds, 
-                                                    nb_noeuds_r, 
-                                                    nb_noeuds_z,
-                                                    R_noeud, 
-                                                    Z_noeud, 
-                                                    R_wall, 
-                                                    Z_wall, 
-                                                    inversion_method, 
-                                                    derivative_matrix)
-            
-        
-            synth_inv_plot = plot_results_inversion_synth(node_full, 
-                                    inv_image_synth, 
-                                    inv_normed_synth, 
-                                    inv_image_thresolded_synth, 
-                                    inv_image_thresolded_normed_synth, 
-                                    image_retrofit_synth, 
-                                    image_full_noise, 
-                                    image_full,
-                                    mask_pixel, 
-                                    mask_noeud, 
-                                    nb_noeuds_r, 
-                                    nb_noeuds_z, 
-                                    R_noeud, 
-                                    Z_noeud, 
-                                    R_wall, 
-                                    Z_wall)
-            synth_inv_plot.savefig(name_images_synthetiques + '.png')
-            plt.close()
-        # synth_inversion(transfert_matrix, mask,  pixels, noeuds, nb_noeuds_r, nb_noeuds_z,R_noeud, Z_noeud, R_wall, Z_wall, inversion_method, noise = 0.1, num_structures = 2, size_struct = 2, inversion_parameter = {"rcond": 1e-3}, derivative_matrix = derivative_matrix)
-    #Does the inversion 
     start_time_get_inversion = time.time()
 
-    if real_inv_flag:
-        if inversion_method == 'Cholmod' or inversion_method == 'Mfr_Cherab':
-            
-            inversion_results, inversion_results_normed, inversion_results_thresolded, inversion_results_thresolded_normed, images_retrofit, mask_noeud, transfert_matrix = call_module2_function("inverse_vid", 
-                                                    transfert_matrix, 
-                                                    mask_pixel, 
-                                                    mask_noeud,
-                                                    vid,  
-                                                    R_noeud, 
-                                                    Z_noeud, 
-                                                    inversion_method,
-                                                    inversion_parameter, 
-                                                    derivative_matrix
-                                                    )
-        else:
-
-            [inversion_results, 
-             inversion_results_normed, 
-             inversion_results_thresolded, 
-             inversion_results_thresolded_normed, 
-             images_retrofit, 
-             mask_noeud, 
-             mask_pixel, 
-             transfert_matrix
-              ]= inverse_vid(transfert_matrix, 
-                                                    mask_pixel, 
-                                                    np.squeeze(mask_noeud),
-                                                    pixels, 
-                                                    noeuds,
-                                                    vid,  
-                                                    R_noeud, 
-                                                    Z_noeud, 
-                                                    inversion_method,
-                                                    inversion_parameter, 
-                                                    folder_inverse_matrix,
-                                                    dict_denoising, 
-                                                    derivative_matrix
-                                                    )
-            #save results
-        start_time_get_save = time.time()
-        idx = [0, inversion_results.shape[0]//2, inversion_results.shape[0]-1]
-        for i in idx:
-            image = vid[i, :, :]
-            inv_image = inversion_results[i, :] 
-            # inv_normed =  inversion_results_normed[i, :]
-            # inv_image_thresolded = inversion_results_thresolded[i, :]
-            # inv_image_thresolded_normed = inversion_results_thresolded_normed[i, :]
-            # fig_results = plot_results_inversion(inv_image, inv_normed, inv_image_thresolded, inv_image_thresolded_normed, transfert_matrix, image, mask_pixel, mask_noeud, pixels, noeuds, R_wall, Z_wall, nb_noeuds_r, nb_noeuds_z, R_noeud, Z_noeud) 
-            try:
-                sep_map = separatrix_map(magflux, t0/1000 + i/fps)
-
-            except:
-                sep_map = None
-            fig_results = plot_results_inversion_simplified(inv_image, transfert_matrix, image, mask_pixel, mask_noeud, pixels, noeuds, R_wall, Z_wall, nb_noeuds_r, nb_noeuds_z, R_noeud, Z_noeud, c_c = 3, cmap = 'viridis', norm = 'linear', magflux = sep_map)
-
-            fig_results.savefig(name_images_reelles + 'frames'+   '%02d.png' % (frame_input[0]+ i), dpi=180)
-
-            plt.close()
-
-
-        # np.savez_compressed(path_resultat_inversion + '.npz',  
-        #                     inversion_results = inversion_results, 
-        #                     images_retrofit = images_retrofit, 
-        #                     mask_pixel = mask_pixel, 
-        #                     mask_noeud = mask_noeud, 
-        #                     pixels = pixels,
-        #                     noeuds = noeuds,
-        #                     frame_input = frame_input)
-        # if isinstance(nb_noeuds_r,  np.ndarray):
-        #     nb_noeuds_r = nb_noeuds_r[0]
-        # if isinstance(nb_noeuds_z,  np.ndarray):
-        #     nb_noeuds_z = nb_noeuds_z[0]
-        if mask_noeud.ndim ==3:
-            inversion_results_full = np.zeros((inversion_results.shape[0], mask_noeud.shape[0], mask_noeud.shape[2]))
-            inversion_results_thresolded_full = np.zeros((inversion_results_thresolded.shape[0], mask_noeud.shape[0], mask_noeud.shape[2]))
-        else:
-            inversion_results_full = np.zeros((inversion_results.shape[0], mask_noeud.shape[0], mask_noeud.shape[1]))
-            inversion_results_thresolded_full = np.zeros((inversion_results_thresolded.shape[0], mask_noeud.shape[0], mask_noeud.shape[1]))
-
-        images_retrofit_full = np.zeros((images_retrofit.shape[0], mask_pixel.shape[0], mask_pixel.shape[1]))
-        try:
-            for i in range(inversion_results.shape[0]):
-                inversion_results_full[i, :, :] = reconstruct_2D_image(inversion_results[i, :], mask_noeud)
-            for i in range(images_retrofit_full.shape[0]):
-                images_retrofit_full[i, :, :] = reconstruct_2D_image(images_retrofit[i, :], mask_pixel)
-            for i in range(inversion_results.shape[0]):
-                inversion_results_thresolded_full[i, :, :] = reconstruct_2D_image(inversion_results_thresolded[i, :], mask_noeud)
-
-        except:
-            pdb.set_trace()
-
-        ind_mid = inversion_results.shape[0]//2
-        utility_functions.plot_image(inversion_results_full[ind_mid, :, :].T, origin = 'lower', )
-        plt.savefig(name_images_reelles + 'inv_result.png')
-        plt.close()
-
-        utility_functions.plot_image(inversion_results_thresolded_full[ind_mid, :, :].T, origin = 'lower')
-        plt.savefig(name_images_reelles + 'inv_result_thresholded.png')
-        plt.close()
-
-        utility_functions.plot_image(images_retrofit_full[ind_mid, :, :].T )
-        plt.savefig(name_images_reelles + 'retrofit.png')
-        plt.close()
-
-        utility_functions.plot_image(vid[ind_mid, :, :].T)
-        plt.savefig(name_images_reelles + 'vid.png')
-        plt.close()
-
-        #setting video and retrofit back into image convention (rows of the matrix being vertical component, first element of matrix being top left point of the image)
-        # vid = np.swapaxes(vid, 1,2)
-        # images_retrofit_full = np.swapaxes(images_retrofit_full, 1,2)
-        path_parameters_save, ext = os.path.splitext(path_parameters)
-        dict_results = dict(inversion_results_full = inversion_results_full,
-                            inversion_results_thresolded_full = inversion_results_thresolded_full,
-                            images_retrofit_full = images_retrofit_full, 
-                            mask_pixel = mask_pixel, 
-                            mask_noeud = mask_noeud, 
-                            pixels = pixels,
-                            noeuds = noeuds,
-                            frame_input = frame_input,
-                            t_start = t_start,
-                            t0 = t0,
-                            t_inv = t_inv, 
-                            path_transfert_matrix = path_transfert_matrix,
-                            path_parameters = path_parameters_save,
-                            path_vid = path_vid,
-                            vid = vid,
-                            folder_inverse_matrix = folder_inverse_matrix,
-                            inversion_parameter = inversion_parameter,
-                            path_save_resultat_inversion = save_resultat_inversion
-                            )
-        try:
-            savemat(save_resultat_inversion + '.mat', dict_results)
-        except:
-            pdb.set_trace()
-        end_time_get_save = time.time()-start_time_get_save
-
-    # creating gif animation with ImageMagick
-        # os.system("convert -delay 10 -loop 0 images/extract_results*.png ray_transfer_mask_demo.gif")
-
+    if ParamsVid.inversion_method == 'Cholmod' or ParamsVid.inversion_method == 'Mfr_Cherab':
+        
+        inversion_results, inversion_results_normed, inversion_results_thresolded, inversion_results_thresolded_normed, images_retrofit, mask_noeud, transfert_matrix = call_module2_function("inverse_vid", 
+                                                transfert_matrix, 
+                                                mask_pixel, 
+                                                mask_noeud,
+                                                vid,  
+                                                R_noeud, 
+                                                Z_noeud, 
+                                                inversion_method,
+                                                inversion_parameter, 
+                                                derivative_matrix
+                                                )
     else:
-        inversion_results = None
-        end_time_get_save = 0
+        Inversion_results.vid = vid
+        Inversion_results= inverse_vid_from_class(Transfert_Matrix,Inversion_results, ParamsMachine, ParamsGrid, ParamsVid)
+        #save results
+    start_time_get_save = time.time()
     
-    
+       
     end_time_get_inversion = time.time()-start_time_get_inversion
 
 
-    full_wall = axisymmetric_mesh_from_polygon(RZwall)
+    # full_wall = axisymmetric_mesh_from_polygon(RZwall)
 
     print('time for input = ', end_time_get_parameters)
     print('time for equilibrium = ', end_time_get_equilibrium)
     print('time for inversion = ', end_time_get_inversion)
-    print('time for save = ', end_time_get_save)
-    # f = open("name_inversion_results  +'frames'+ str(frame_input[0]) + '_'+ str(frame_input[1].txt", "w")
-    # f.write(str(end_time_get_parameters))
-    # f.write(str(end_time_get_equilibrium))
-    # f.write(str(end_time_get_inversion))
-    # f.write(str(end_time_get_save))
-    # # f.close()
-    # with open(path_parameters[:-4]+'.pk', 'wb') as f:
-        
-    #     pickle.dump(kwargs, f)
-    #     f.close()
-    return transfert_matrix, vid, images_retrofit_full, inversion_results_full, inversion_results_thresolded_full, pixels, noeuds, dr_grid, dz_grid, nb_noeuds_r, nb_noeuds_z, RZwall, R_wall, Z_wall, world, full_wall, R_noeud, Z_noeud, mask_pixel, mask_noeud, path_parameters, path_transfert_matrix
+
+    Inversion_results.save()
+    return Inversion_results
 
 
-
-def get_vid(time_input, frame_input, path_vid = None, nshot = None, inversion_parameter = {}):
-
+def get_vid(ParamsVid):
+    path_vid = ParamsVid.path_vid
+    time_input = ParamsVid.time_input
+    frame_input = ParamsVid.frame_input
+    nshot = ParamsVid.nshot
+    dict_denoising = ParamsVid.dict_denoising
+    time_input = ParamsVid.time_input
     from scipy import ndimage
-  
-    if path_vid != 'None':
+    if path_vid:
         
         try:
             import pyMRAW
@@ -892,12 +483,12 @@ def get_vid(time_input, frame_input, path_vid = None, nshot = None, inversion_pa
             raise(NameError('Time trigger not recognized. Update the get_vid function to handle this new case'))
  
 
-    sigma = inversion_parameter.get('sigma')
+    sigma = dict_denoising.get('sigma')
     sigma = sigma or 0
     if sigma:
         images = utility_functions.gaussian_blur_video(images, sigma=sigma)
 
-    median = inversion_parameter.get('median')
+    median = dict_denoising.get('median')
     median = median or 0
     if median:
         images_median = ndimage.median_filter(images, size=(median,1,1), mode = 'nearest')
@@ -910,8 +501,8 @@ def get_vid(time_input, frame_input, path_vid = None, nshot = None, inversion_pa
         name_time = 'frame' + str(frame_input[0]) + '_'   + str(frame_input[1])
         t0 = t_start+frame_input[0]/fps
 
-    if 'reduce_frames' in  inversion_parameter.keys():
-        reduce_frames = inversion_parameter['reduce_frames']
+    if 'reduce_frames' in  dict_denoising.keys():
+        reduce_frames = dict_denoising['reduce_frames']
         images = utility_functions.average_along_first_row(images,reduce_frames)
         fps = fps/reduce_frames
     t_inv = t0+np.arange(images.shape[0])/fps
@@ -943,42 +534,22 @@ def get_name_extenstion(path):
 
     return name_shortened
 
-def get_transfert_matrix(mask, 
-                         realcam, 
-                         real_pipeline, 
-                         RZwall, dr_grid, 
-                         dz_grid, 
-                         image_dim_y,
-                         image_dim_x, 
-                         world, 
-                         full_wall, 
-                         verbose, 
-                         path_transfert_matrix, 
-                         path_parameters, 
-                         symetry, 
-                         nshot, 
-                         dict_transfert_matrix, 
-                         path_CAD,
-                         variant,
-                         phi_grid = None,
-                         grid_precision_multiplier = 1,
-                         n_polar = 1,
-                         t_inv = None):
+def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, ParamsGrid, ParamsVid, Inversion_results):
     """
     return transfert_matrix for west"
     """
     
     #get wall coordinates to get the cherab object
-    if symetry == 'magnetic': #overwrites wall with the one saved in pleque
-        t_pleque = t_inv[len(t_inv)//2] #choose middle time of the inversion for time of equilibrium
+    if ParamsGrid.symetry == 'magnetic': #overwrites wall with the one saved in pleque
+        t_pleque = Inversion_results.t_inv[len(Inversion_results.t_inv)//2] #choose middle time of the inversion for time of equilibrium
         t_pleque = t_pleque*1000 # converting in ms for pleque
         import pleque.io.compass as plq
         print("magnetic symmetry")
-        revision_mag = dict_transfert_matrix.get('revision')
+        revision_mag = ParamsGrid.revision
         revision_mag = revision_mag or 1
-        variant_mag =  dict_transfert_matrix.get('variant_mag')
+        variant_mag =  ParamsGrid.variant_mag
         variant_mag = variant_mag or ''
-        eq = plq.cdb(nshot, t_pleque, revision = revision_mag, variant = variant_mag)
+        eq = plq.cdb(ParamsVid.nshot, t_pleque, revision = revision_mag, variant = variant_mag)
         RZwall = np.array([eq.first_wall.R,eq.first_wall.Z]).T
         RZwall =RZwall[:-1, :] 
         RZwall = RZwall[::-1]
@@ -989,7 +560,7 @@ def get_transfert_matrix(mask,
     Z_wall = RZwall[:, 1]
 
 
-    visible_pix = np.where(mask) 
+    visible_pix = np.where(Transfert_Matrix.mask_pixel) 
     pos_camera = realcam.pixel_origins[visible_pix[0][0]  , visible_pix[1][0]]
     pos_camera = np.array([pos_camera.x,pos_camera.y, pos_camera.z] )
     pos_camera_RPHIZ = utility_functions.xyztorphiz(pos_camera)
@@ -1010,24 +581,24 @@ def get_transfert_matrix(mask,
     # R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[0.9, 0.0069587420250745,0.6801025165889444, -0.4519975310227926]
 
 
-    if verbose:
-        fig = utility_functions.plot_cylindrical_coordinates(RPHIZ)
-        fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,0,:], fig, color = 'blue', label = 'point [0,0]')
-        fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,0,:], fig, color = 'red', label = 'point [-1,0]')
-        fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,-1,:], fig, color = 'green', label = 'point [0,-1]')
-        fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,-1,:], fig, color = 'yellow', label = 'point [-1,-1]')
-        plt.savefig(main_folder_image + 'images line of sight and wall')
+    # if verbose:
+    #     fig = utility_functions.plot_cylindrical_coordinates(RPHIZ)
+    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,0,:], fig, color = 'blue', label = 'point [0,0]')
+    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,0,:], fig, color = 'red', label = 'point [-1,0]')
+    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,-1,:], fig, color = 'green', label = 'point [0,-1]')
+    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,-1,:], fig, color = 'yellow', label = 'point [-1,-1]')
+    #     plt.savefig(main_folder_image + 'images line of sight and wall')
     extent_RZ =[R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud] 
-    nb_noeuds_r = int((R_max_noeud-R_min_noeud)/dr_grid)
-    nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/dz_grid)
-    cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, dict_transfert_matrix)
+    nb_noeuds_r = int((R_max_noeud-R_min_noeud)/ParamsGrid.dr_grid)
+    nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/ParamsGrid.dz_grid)
+    cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, ParamsGrid.crop_center)
     # The RayTransferCylinder object is fully 3D, but for simplicity we're only
     # working in 2D as this case is axisymmetric. It is easy enough to pass 3D
     # views of our 2D data into the RayTransferCylinder object: we just ues a
     # numpy.newaxis (or equivalently, None) for the toroidal dimension.
     grid_mask = grid_mask[:, np.newaxis, :]
-    if symetry =='magnetic':
-        n_polar = n_polar
+    if ParamsGrid.symetry =='magnetic':
+        n_polar = ParamsGrid.n_polar
     else:
         n_polar = 1
     RZ_mask_grid = np.copy(grid_mask)
@@ -1039,18 +610,18 @@ def get_transfert_matrix(mask,
     #recalculate the extremities of the grid; the grid starts at (r_min, z_min) and its last point is (r_max-dr_grid, z_max-dz_grid)
 
    
-    if symetry =='magnetic':
+    if ParamsGrid.symetry =='magnetic':
                 
         start = time.time()
         
-        FL_MATRIX, dPhirad, phi_min, phi_mem = FL_lookup(eq, phi_grid, cell_r, cell_z, phi_min, phi_max, 0.5e-3, 0.2)
+        FL_MATRIX, dPhirad, phi_min, phi_mem = FL_lookup(eq, ParamsGrid.phi_grid, cell_r, cell_z, phi_min, phi_max, 0.5e-3, 0.2)
         end = time.time()
 
         elapsed = end - start
         print(f"Magnetic field lines calculation : {elapsed:.3f} seconds")
 
         start = time.time()
-        cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r*grid_precision_multiplier, nb_noeuds_z*grid_precision_multiplier, wall_limit, dict_transfert_matrix)
+        cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r*ParamsGrid.grid_precision_multiplier, nb_noeuds_z*ParamsGrid.grid_precision_multiplier, wall_limit, ParamsGrid.crop_center)
         grid_mask_precision = grid_mask_precision[:, np.newaxis, :]
         grid_mask_precision = np.tile(grid_mask_precision, (1, n_polar, 1))
         phi_tour = np.linspace(0, 360, n_polar, endpoint = False)
@@ -1059,8 +630,8 @@ def get_transfert_matrix(mask,
         phi_tour = phi_tour[phi_vision]
         plasma = RayTransferCylinder(radius_outer = R_max_noeud, 
                                     height= Z_max_noeud-Z_min_noeud, 
-                                    n_radius = nb_noeuds_r*grid_precision_multiplier, 
-                                    n_height = nb_noeuds_z*grid_precision_multiplier, 
+                                    n_radius = nb_noeuds_r*ParamsGrid.grid_precision_multiplier, 
+                                    n_height = nb_noeuds_z*ParamsGrid.grid_precision_multiplier, 
                                     radius_inner = R_min_noeud,  
                                     transform=translate(0., 0., Z_min_noeud), 
                                     n_polar = n_polar, 
@@ -1072,14 +643,14 @@ def get_transfert_matrix(mask,
         # plasma.voxel_map[~grid_mask] = -1 
         # pdb.set_trace()
         # voxel_map = create_voxel_map_from_equilibrium(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit, dict_transfert_matrix)
-        voxel_map = create_voxel_map_from_equilibrium_query(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit, dict_transfert_matrix)
+        voxel_map = create_voxel_map_from_equilibrium_query(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit)
 
         plasma2 = RayTransferCylinder(
             radius_outer=R_max_noeud,
             radius_inner=R_min_noeud,
-            height=nb_noeuds_z*dz_grid,
-            n_radius=nb_noeuds_r*grid_precision_multiplier, 
-            n_height=nb_noeuds_z*grid_precision_multiplier,  
+            height=nb_noeuds_z*ParamsGrid.dz_grid,
+            n_radius=nb_noeuds_r*ParamsGrid.grid_precision_multiplier, 
+            n_height=nb_noeuds_z*ParamsGrid.grid_precision_multiplier,  
             n_polar=n_polar,
             mask = grid_mask_precision,
             voxel_map = voxel_map,
@@ -1087,10 +658,9 @@ def get_transfert_matrix(mask,
             parent = world,
             transform=translate(0, 0, Z_min_noeud)
         )
-        if verbose:
-            ind_line = plasma.bins//2
+        
 
-    elif symetry == 'toroidal':
+    elif ParamsGrid.symetry == 'toroidal':
         phi_tour = n_polar
         plasma2 = RayTransferCylinder(
         radius_outer=cell_r[-1],
@@ -1104,25 +674,25 @@ def get_transfert_matrix(mask,
             
     else:
         raise(NameError('unrecognized symetry, write toroidal or magnetic'))
-    if verbose:
-        plt.figure()
-        plt.imshow(np.sum(plasma.voxel_map, 1).T, extent= extent_RZ, origin = 'lower' )
-        plt.show(block = False)
-        plt.savefig(main_folder_image + '2D_voxel_map.png')
+    # if verbose:
+    #     plt.figure()
+    #     plt.imshow(np.sum(plasma.voxel_map, 1).T, extent= extent_RZ, origin = 'lower' )
+    #     plt.show(block = False)
+    #     plt.savefig(main_folder_image + '2D_voxel_map.png')
     
     #calculate inversion matrix
     print(plasma2.bins)
     print(num_points_rz)
     realcam.spectral_bins = plasma2.bins #set the grid to a size (NR, NZ) plus 1 extra node for elements of the grid too far from calculated field lines
-    if realcam.spectral_bins >image_dim_y*image_dim_x:
+    if realcam.spectral_bins >realcam.pixels[0]*realcam.pixels[1]:
         raise Exception("more nodes than pixels, inversion is impossible. Lower dr_grid or dz_grid")
     if realcam.spectral_bins >10000:
         print("careful, huge number of nodes")
-    if verbose:
-        compare_voxel_map_and_pleque(plasma2, FL_MATRIX, Z_min_noeud, phi_mem)
+    # if verbose:
+    #     compare_voxel_map_and_pleque(plasma2, FL_MATRIX, Z_min_noeud, phi_mem)
 
-    if verbose:
-        create_synth_cam_emitter(realcam, full_wall, R_wall, Z_wall, mask, path_CAD, variant = variant)
+    # if verbose:
+    #     create_synth_cam_emitter(realcam, full_wall, R_wall, Z_wall, mask, path_CAD, variant = variant)
     
     
     end = time.time()
@@ -1131,13 +701,10 @@ def get_transfert_matrix(mask,
     print(f"Magnetic field lines assignation : {elapsed:.3f} seconds")
 
 
-    # flag_integrity = verify_integrity(realcam, mask)
-    # if not flag_integrity:
-    #     raise(ValueError('mask of pixel inconsistent with either pixel los or origins'))
     realcam.observe()
-
-    print('shape full transfert matrix = ' + str(real_pipeline.matrix.shape))
-    flattened_matr = real_pipeline.matrix.reshape(real_pipeline.matrix.shape[0] * real_pipeline.matrix.shape[1], real_pipeline.matrix.shape[2])
+    pipelines = realcam.pipelines[0]
+    print('shape full transfert matrix = ' + str(pipelines.matrix.shape))
+    flattened_matr = pipelines.matrix.reshape(pipelines.matrix.shape[0] * pipelines.matrix.shape[1], pipelines.matrix.shape[2])
     
     if flattened_matr.shape[1] > num_points_rz: 
         #some elements of the grid don't see the field lines. Checking if they are out of the field of view of the camera
@@ -1154,7 +721,7 @@ def get_transfert_matrix(mask,
     #save results
     mask_pixel = np.zeros(flattened_matr.shape[0], dtype = bool)
     mask_pixel[pixels] = True
-    mask_pixel = mask_pixel.reshape(real_pipeline.matrix.shape[0:2])
+    mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
     # x, y, z = np.where(RZ_mask_grid)
     # x = x[noeuds]
     # y = y[noeuds]
@@ -1172,7 +739,7 @@ def get_transfert_matrix(mask,
     nb_visible_noeuds = len(np.unique(noeuds))
     nb_vision_pixel = len(np.unique(pixels))
     print('visible node = ' + str(nb_visible_noeuds) + 'out of ' + str(nb_noeuds_r*nb_noeuds_z))
-    print('vision pixels = ' + str(nb_vision_pixel) + 'out of ' + str(real_pipeline.matrix.shape[0] * real_pipeline.matrix.shape[1]))
+    print('vision pixels = ' + str(nb_vision_pixel) + 'out of ' + str(pipelines.matrix.shape[0] * pipelines.matrix.shape[1]))
 
     transfert_matrix = csr_matrix(transfert_matrix)
     print(transfert_matrix.shape)
@@ -1183,39 +750,47 @@ def get_transfert_matrix(mask,
     plt.figure()
     plt.imshow(np.squeeze(mask_noeud).T, extent= extent_RZ, origin = 'lower' )
     plt.savefig(main_folder_image + '2D_map_nodes.png')
-    if verbose:
-        plt.show(block = False)
-
-
-    try: 
-        save_npz(path_transfert_matrix, transfert_matrix)
-    except:
-        print('save of transfert matrix failed')
-        pdb.set_trace()
-    try:
-        dict_save_parameters = dict(pixels = pixels, 
-                            noeuds = noeuds, 
-                            nb_noeuds_r = nb_noeuds_r, 
-                            nb_noeuds_z = nb_noeuds_z, 
-                            R_max_noeud = R_max_noeud, 
-                            R_min_noeud = R_min_noeud, 
-                            Z_max_noeud = Z_max_noeud, 
-                            Z_min_noeud = Z_min_noeud, 
-                            R_noeud = cell_r,
-                            Z_noeud = cell_z, 
-                            mask_pixel = mask_pixel, 
-                            mask_noeud= mask_noeud,
-                            phi_tour = phi_tour)
-        np.savez_compressed(path_parameters, **dict_save_parameters)
-        path_parameters_save ,ext = os.path.splitext(path_parameters)
-        savemat(path_parameters_save + '.mat', dict_save_parameters)
-    except:
-        print('save of parameters failed')
-        pdb.set_trace()
+    # if verbose:
+    #     plt.show(block = False)
+    Transfert_Matrix.transfert_matrix = transfert_matrix
+    Transfert_Matrix.mask_noeud = mask_noeud
+    Transfert_Matrix.mask_pixel = mask_pixel
+    Transfert_Matrix.noeuds = noeuds
+    Transfert_Matrix.pixels = pixels
+    Transfert_Matrix.R_noeud = cell_r
+    Transfert_Matrix.Z_noeud = cell_z
+    Transfert_Matrix.pixels = pixels
     
-    return transfert_matrix, pixels, noeuds, cell_r, cell_z, nb_noeuds_r, nb_noeuds_z, mask_pixel, mask_noeud, phi_tour
+    Transfert_Matrix.save()
+    "mask_noeud", "mask_pixel", "transfert_matrix", "noeuds", "pixels", "RZ_wall", "R_noeud", "Z_noeud"
 
-
+    # try: 
+    #     save_npz(path_transfert_matrix, transfert_matrix)
+    # except:
+    #     print('save of transfert matrix failed')
+    #     pdb.set_trace()
+    # try:
+    #     dict_save_parameters = dict(pixels = pixels, 
+    #                         noeuds = noeuds, 
+    #                         nb_noeuds_r = nb_noeuds_r, 
+    #                         nb_noeuds_z = nb_noeuds_z, 
+    #                         R_max_noeud = R_max_noeud, 
+    #                         R_min_noeud = R_min_noeud, 
+    #                         Z_max_noeud = Z_max_noeud, 
+    #                         Z_min_noeud = Z_min_noeud, 
+    #                         R_noeud = cell_r,
+    #                         Z_noeud = cell_z, 
+    #                         mask_pixel = mask_pixel, 
+    #                         mask_noeud= mask_noeud,
+    #                         phi_tour = phi_tour)
+    #     np.savez_compressed(path_parameters, **dict_save_parameters)
+    #     path_parameters_save ,ext = os.path.splitext(path_parameters)
+    #     savemat(path_parameters_save + '.mat', dict_save_parameters)
+    # except:
+    #     print('save of parameters failed')
+    #     pdb.set_trace()
+    
+    return Transfert_Matrix
                   
 
                                   
@@ -1987,103 +1562,9 @@ def load_results_inversion(loading_folder, name_inversion_results):
     frame_input = loaded_results['frame_input']
     return inversion_results, mask_pixel, mask_noeud, frame_input
 
-def get_name_machine(machine):
-    # get the name of the machine and assure it is the correct syntax in lowercase
-    if machine.lower()== 'compass':
-        machine = 'COMPASS'
-    elif machine.lower()== 'west':
-        machine = 'WEST'
-    else:
-        raise Exception('unrecognised machine')
-    return machine
-
-def extract_name_variables(input_str):
-    PARTS =  input_str.split("/") 
-    nshot = int(PARTS[0])
-    parameters = PARTS[1]
-
-    parts = parameters.split("_")  # Split the string by "_"
-
-    i = 0
-    j = 0
-    regular_names = ['mask', 'calibration', 'wall', 'material', 'dz', 'dr', 'decimation', 'cropping', 'reflexion_dict']
-    new_names = []
-    while i < len(parts):
-        name_part = ''
-        if parts[i] == regular_names[j]:  # If it's a regular name, store its value
-            j = j+1
-            i = i+1
-            while parts[i] != regular_names[j]:
-                name_part = name_part+parts[i]
-                i = i+1
-            new_names[j-1] = name_part
-    name_mask = new_names[0]
-    name_calib = new_names[1]
-    type_wall = new_names[2]
-    name_material = new_names[3]
-    dz_grid = int(new_names[4])
-    dr_grid = int(new_names[5])
-    decimation = int(new_names[6])
-    dr_grid = int(new_names[5])
-    param_fit = new_names[6]
-    dict_transfert_matrix = new_names[7]
 
 
 
-
-    name_parameters = ( 
-        '_mask_' + name_mask + 
-        '_calibration_' + name_calib+ 
-        '_wall_' + type_wall + 
-        '_material_' + name_material + 
-        '_dz_' + str(int(dz_grid*1e3)) + 
-        '_dr_' + str(int(dr_grid*1e3)) + 
-        '_decimation_' + str(decimation) +
-        '_cropping_' + str(param_fit) + 
-        '_reflexion_dict_' + str(dict_transfert_matrix)
-    )
-
-    return name_parameters
-
-
-
-def compare_transfert_matrix(nshot = None, path_reflexion = None, path_absorb = None, path_resultat_inversion = None, path_vid = None):
-    if not path_reflexion:
-        path_reflexion = utility_functions.get_file('get npz file of reflexion data', path_root= '/Home/LF276573/Documents/Python/CHERAB/transfert_matrix/west/',full_path = 1)
-    path_reflexion, ext = os.path.splitext(path_reflexion)
-    if not path_absorb:
-        path_absorb = utility_functions.get_file('get npz file of absorb data', path_root='/Home/LF276573/Documents/Python/CHERAB/transfert_matrix/west/',full_path = 1)
-    path_absorb, ext = os.path.splitext(path_absorb)
-    if not path_resultat_inversion:
-        path_resultat_inversion = utility_functions.get_file('get npz file of inversion results', path_root='/Home/LF276573/Documents/Python/CHERAB/resultat_inversion/west/',full_path = 1)
-    path_resultat_inversion, ext = os.path.splitext(path_resultat_inversion)
-    if not path_vid:
-        path_vid = utility_functions.get_file('get video file', path_root = '/Home/LF276573/Documents/Python/CHERAB/videos/west/', full_path = 1)
-
-    load_refl = np.load(path_reflexion + '.npz', allow_pickle=True)
-    data_refl = {key: load_refl[key] for key in load_refl}
-    data_refl['transfert_matrix'] = load_npz(path_reflexion + '_transfert_matrix.npz')
-    load_absorb = np.load(path_absorb + '.npz', allow_pickle=True)
-    data_absorb = {key: load_absorb[key] for key in load_absorb}
-    data_absorb['transfert_matrix'] = load_npz(path_absorb + '_transfert_matrix.npz')
-
-    inversion_results, mask_inversion, mask_noeud_inversion, frame_input = load_results_inversion(os.path.dirname(path_resultat_inversion), os.path.basename(path_resultat_inversion))
-    frame_input = [frame_input[0], frame_input[1]]
-    path_vid, ext = os.path.splitext(path_vid)
-    if ext == '.png':
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(path_vid, nshot)
-        image = vid[0, :,:]
-        image = np.flip(image, 1)
-    else: #load videos
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t0 = get_vid(None, frame_input, path_vid = path_vid, nshot = nshot)
-        image = vid[0, :,:]
-        image = np.flip(image, 0)
-        image = image.T
-    inversion = inversion_results[0, :]
-
-    inversion_full = reconstruct_2D_image(inversion, mask_noeud_inversion)
-    inversion_refl, inversion_absorb, image_retrofit_full_absorb, image_retrofit_full_refl, diff = recreate_retrofit(image, inversion_full, data_refl, data_absorb)
-    return image, image_retrofit_full_absorb, image_retrofit_full_refl, diff, inversion_full, nshot, path_absorb, path_reflexion, path_resultat_inversion, path_vid, data_refl, data_absorb
 
 def call_function_in_environment(module_name, function_name, environment_name, args, kwargs):
     # Serialize the arguments and keyword arguments
@@ -2221,129 +1702,8 @@ def optimize_boundary_grid(realcam, world, R_max_noeud, R_min_noeud, Z_max_noeud
 
 
 
-def get_name_parameters_inversion(inversion_parameter):
-    name_inversion_parameters = ''
-    for key in inversion_parameter.keys():
-        name_inversion_parameters = name_inversion_parameters + '_' + key
-        if type(inversion_parameter[key]) != str:
-            name_inversion_parameters = name_inversion_parameters + '_' + str(inversion_parameter[key])
-        else:
-            name_inversion_parameters = name_inversion_parameters + '_' + inversion_parameter[key]
-    if not name_inversion_parameters:
-        name_inversion_parameters = 'None'
-    return name_inversion_parameters
 
 
-def compare_reflection_results_parameters(parameters = None):
-    if not parameters:
-        name_parameters = utility_functions.get_file()
-
-    comparison = 1
-    return comparison 
-
-
-def compare_synth_image(image, image_refl, image_absorb):
-    std = np.load('std_noise.npy')
-    diff_refl = image-image_refl
-    diff_absorb = image-image_absorb
-    pixel_reflections = np.abs(diff_refl)>1.2*std
-    pixel_absorb = np.abs(diff_absorb)>1.2*std
-    diff_refl[np.invert(pixel_reflections)] = 0
-    diff_absorb[np.invert(pixel_absorb)] = 0
-    utility_functions.plot_comparaison_image(np.abs(diff_refl), np.abs(diff_absorb), vmax = 50)
-    return diff_refl, diff_absorb
-    
-
-def recreate_retrofit(image, inversion_full, data_refl, data_absorb):
-
-    inversion_refl = inversion_full[data_refl['mask_noeud']]
-    inversion_absorb = inversion_full[data_absorb['mask_noeud']]
-    
-    # image_retrofit_absorb = transfert_matrix_absorption.dot(inversion)
-    # image_retrofit_full_absorb = reconstruct_2D_image(image_retrofit_absorb, mask_inversion)
-    image_retrofit_refl = data_refl['transfert_matrix'].dot(inversion_refl)
-    image_retrofit_full_refl = reconstruct_2D_image(image_retrofit_refl, data_refl['mask_pixel'])
-    image_retrofit_absorb = data_absorb['transfert_matrix'].dot(inversion_absorb)
-    image_retrofit_full_absorb = reconstruct_2D_image(image_retrofit_absorb, data_absorb['mask_pixel'])
-    norm = 'linear'
-    cmap = 'PiYG'
-    import matplotlib.colors as mcolors
-    # print(np.min(image), np.min(image_retrofit_full_absorb), np.min(image_retrofit_full_refl))
-    diff = image-image_retrofit_full_refl
-    if norm == 'log':
-        image = np.log2(image+1e-10)   
-        image_retrofit_full_absorb = np.log2(image_retrofit_full_absorb+1e-10)
-        image_retrofit_full_refl = np.log2(image_retrofit_full_refl+1e-10)
-        diff = np.log2(np.abs(diff)+1e-10)
-
-    # if norm == 'log':
-    #     image = np.log2(image-min(-1, np.min(image)))   
-    #     image_retrofit_full_absorb = np.log2(image_retrofit_full_absorb-min(-1, np.min(image_retrofit_full_absorb)))
-    #     image_retrofit_full_refl = np.log2(image_retrofit_full_refl+1)
-    vmin = image.min()
-    # vmin = 12
-    # vmax = image.max()
-    vmax = 200
-    
-    
-    #synthetic image
-    plt.figure()
-    plt.subplot(2,2,1)
-    plt.imshow(image, cmap = cmap, vmin = vmin, vmax = vmax)
-    plt.colorbar()
-    plt.title('real image')
-
-    #retro fit
-    plt.subplot(2, 2,2)
-    plt.imshow(image_retrofit_full_absorb, cmap = cmap, vmin = vmin, vmax = vmax)
-    plt.colorbar()
-    plt.title('Retro fit absorption')
-
-    #retro fit
-    plt.subplot(2, 2,3)
-    plt.imshow(image_retrofit_full_refl, cmap = cmap, vmin = vmin, vmax = vmax)
-    plt.colorbar()
-    plt.title('Retro fit reflexion')
-    #retro fit
-
-    plt.subplot(2, 2,4)
-    plt.imshow(diff, cmap = cmap)
-    plt.colorbar()
-    plt.title('difference retro fit refl and real image')
-    plt.show(block = False)
-    return inversion_refl, inversion_absorb, image_retrofit_full_absorb, image_retrofit_full_refl, diff
-
-
-
-
-
-def compare_already_loaded_transfert_matrix(nshot, data_refl, data_absorb, path_resultat_inversion = None, path_vid = None):
-    
-    if not path_resultat_inversion:
-        path_resultat_inversion = utility_functions.get_file('get npz file of inversion results', path_root='/Home/LF276573/Documents/Python/CHERAB/resultat_inversion/west/',full_path = 1)
-    path_resultat_inversion, ext = os.path.splitext(path_resultat_inversion)
-    if not path_vid:
-        path_vid = utility_functions.get_file('get video file', path_root = '/Home/LF276573/Documents/Python/CHERAB/videos/west/', full_path = 1)
-
-    
-
-    inversion_results, mask_inversion, mask_noeud_inversion, frame_input = load_results_inversion(os.path.dirname(path_resultat_inversion), os.path.basename(path_resultat_inversion))
-    frame_input = [frame_input[0], frame_input[1]]
-    path_vid, ext = os.path.splitext(path_vid)
-    if ext == '.png':
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(path_vid, nshot)
-        image = vid[0, :,:]
-        image = np.flip(image, 1)
-    else: #load videos
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t0 = get_vid(None, frame_input, path_vid = path_vid, nshot = nshot)
-        image = vid[0, :,:]
-        image = np.flip(image, 0)
-        image = image.T
-    inversion = inversion_results[0, :]
-
-    inversion_full = reconstruct_2D_image(inversion, mask_noeud_inversion)
-    inversion_refl, inversion_absorb, image_retrofit_full_absorb, image_retrofit_full_refl, diff = recreate_retrofit(image, inversion_full, data_refl, data_absorb)
-    return image, image_retrofit_full_absorb, image_retrofit_full_refl, diff, inversion_full, nshot, path_resultat_inversion, path_vid, data_refl, data_absorb
 
 def read_CAD(path_CAD, world, name_material = 'AbsorbingSurface', wall_material = AbsorbingSurface(), variant = 'default'):
 
@@ -2499,19 +1859,6 @@ def create_synth_image(path_parameters = None, path_transfert_matrix = None):
 
 
 
-# def verify_integrity(realcam, mask_pixel):
-    # for i in range(mask_pixel.shape[0]):
-    #     for j in range(mask_pixel.shape[1]):
-    #         if mask_pixel[i, j] == 1:
-    #             if np.isnan(realcam.pixel_directions[i, j].x) or np.isnan(realcam.pixel_origins[i, j].x):
-    #                 return False
-    #         elif mask_pixel[i, j] == 0:
-    #             if not np.isnan(realcam.pixel_directions[i, j].x) or not np.isnan(realcam.pixel_origins[i, j].x):
-    #                 return False
-    #         else:
-    #             raise('mask data cannot be used to mask pixels of camera. Please check datatype')
-
-    # return True
 
 
 
@@ -2837,7 +2184,7 @@ def plot_compare_3D_lines(R1, PHI1, Z1, R2, PHI2, Z2, label1 = 'Line 1 in Cylind
 
 
 
-def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, dict_transfert_matrix = None):
+def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, crop_center):
 
     cell_r, cell_dr = np.linspace(R_min_noeud, R_max_noeud, nb_noeuds_r, retstep=True, endpoint = False)
     cell_z, cell_dz = np.linspace(Z_min_noeud, Z_max_noeud, nb_noeuds_z, retstep=True, endpoint = False)
@@ -2862,7 +2209,7 @@ def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_no
                 vertex_mask[i, j]= 1
 
     #remove points for psi_norm<0.9
-    if dict_transfert_matrix.get('crop_center'):
+    if crop_center:
         vertex_mask = remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z)
 
     # Cell is included if at least one vertex is within the wall
@@ -2955,7 +2302,7 @@ def create_voxel_map_from_equilibrium(FL_MATRIX, plasma, cell_r_precision, cell_
 
 
 
-def create_voxel_map_from_equilibrium_query(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit, dict_transfert_matrix):
+def create_voxel_map_from_equilibrium_query(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit):
 
     # turning angle back into degrees
 
@@ -2989,3 +2336,65 @@ def create_voxel_map_from_equilibrium_query(FL_MATRIX, plasma, cell_r_precision,
     return voxel_map
 
 
+
+def load_transfert_matrix_and_parameters(path_parameters = None, path_transfert_matrix = None):
+    if not path_parameters:
+        path_parameters =utility_functions.get_file(path_root  = '/Home/LF276573/Zone_Travail/Python/CHERAB/transfert_matrix/west/', full_path=0)
+        name_parameters, ext = os.path.splitext(path_parameters)
+        path_transfert_matrix = name_parameters + '_transfert_matrix.npz'
+    loaded_raytracing = np.load(path_parameters, allow_pickle = True)
+    transfert_matrix = load_npz(path_transfert_matrix)
+    try:
+        pixels = loaded_raytracing['pixels']
+    except:
+        test = loaded_raytracing['arr_0']
+        dict_save_parameters = dict(test.tolist())
+        np.savez_compressed(path_parameters, **dict_save_parameters)
+        loaded_raytracing = np.load(path_parameters, allow_pickle = True)
+        try:
+            pixels = loaded_raytracing['pixels']
+        except:
+            raise(Exception('fail to resave parameters'))
+    noeuds = loaded_raytracing['noeuds']
+    pixels = np.squeeze(pixels)
+    noeuds = np.squeeze(noeuds)
+    nb_noeuds_r = loaded_raytracing['nb_noeuds_r']
+    nb_noeuds_z = loaded_raytracing['nb_noeuds_z']
+    R_max_noeud = loaded_raytracing['R_max_noeud']
+    R_min_noeud = loaded_raytracing['R_min_noeud']
+    Z_max_noeud = loaded_raytracing['Z_max_noeud']
+    Z_min_noeud = loaded_raytracing['Z_min_noeud']
+    R_noeud = loaded_raytracing['R_noeud']
+    Z_noeud = loaded_raytracing['Z_noeud']
+    mask_noeud = loaded_raytracing['mask_noeud']
+    mask_pixel = loaded_raytracing['mask_pixel']
+    if mask_pixel.ndim != 2:
+        pdb.set_trace()
+    dict_save_parameters = dict(pixels = pixels, 
+                        noeuds = noeuds, 
+                        nb_noeuds_r = nb_noeuds_r, 
+                        nb_noeuds_z = nb_noeuds_z, 
+                        R_max_noeud = R_max_noeud, 
+                        R_min_noeud = R_min_noeud, 
+                        Z_max_noeud = Z_max_noeud, 
+                        Z_min_noeud = Z_min_noeud, 
+                        R_noeud = R_noeud,
+                        Z_noeud = Z_noeud, 
+                        mask_pixel = mask_pixel, 
+                        mask_noeud= mask_noeud)
+    # path_parameters_save ,ext = os.path.splitext(path_parameters)
+    # savemat(path_parameters_save + '.mat', dict_save_parameters)
+    return (transfert_matrix, 
+            pixels,
+            noeuds, 
+            nb_noeuds_r, 
+            nb_noeuds_z, 
+            R_max_noeud, 
+            R_min_noeud, 
+            Z_max_noeud, 
+            Z_min_noeud, 
+            R_noeud,
+            Z_noeud, 
+            mask_pixel, 
+            mask_noeud,
+            path_parameters)
