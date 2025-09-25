@@ -1,5 +1,5 @@
 from scipy.sparse import load_npz, isspmatrix, csc_matrix, csr_matrix, save_npz
-
+import os
 from scipy.interpolate import RegularGridInterpolator
 import sys
 import pickle
@@ -197,7 +197,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         solver_dict = {'rcond' : rcond}
         
 
-        path_inverse_matrix = folder_inverse_matrix + 'inverse_matrix'
+        path_inverse_matrix = folder_inverse_matrix
         path_norm_matrix = folder_inverse_matrix + 'norm'
 
         try:
@@ -206,7 +206,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         except:
             inversion.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
             inversion._normalise_wo_mat()
-
+        os.makedirs(os.path.dirname(path_inverse_matrix), exist_ok = True)
         inversion.save_decomposition(path_inverse_matrix)
 
         inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
@@ -245,7 +245,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         transfert_matrix = csr_matrix(transfert_matrix)
 
 
-        path_inverse_matrix = folder_inverse_matrix + 'inverse_matrix'
+        path_inverse_matrix = folder_inverse_matrix 
         path_norm_matrix = folder_inverse_matrix + 'norm'
 
         try:
@@ -254,8 +254,8 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         except:
             inversion.decompose(transfert_matrix, simple_base)
             inversion._normalise_wo_mat()
-
-        inversion.save_decomposition(path_inverse_matrix)
+            os.makedirs(os.path.dirname(path_inverse_matrix), exist_ok = True)
+            inversion.save_decomposition(path_inverse_matrix)
 
         inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
         inv_normed = np.divide(inv_images, inversion.norms)
@@ -787,7 +787,7 @@ def inverse_vid_from_class(Transfert_Matrix, Inversion_results, ParamsMachine, P
     inversion_results, inversion_results_normed, inversion_results_thresolded,inversion_results_thresolded_normed, images_retrofit, transfert_matrix = inversion_and_thresolding(images, 
                                                                                                                                                                transfert_matrix,                                                                                                                                                             
                                                                                                                                                                ParamsVid.inversion_method,
-                                                                                                                                                               Transfert_Matrix.filename + '/' + ParamsVid.filename + 'inverse_matrix',
+                                                                                                                                                               Inversion_results.path_inverse_matrix,
                                                                                                                                                                ParamsVid.dict_denoising,
                                                                                                                                                                inversion_parameter=ParamsVid.inversion_parameter)
     Inversion_results.inversion_results = inversion_results
@@ -810,7 +810,7 @@ def denoising(Inversion_results):
         transfert_matrix = csr_matrix(Inversion_results.transfert_matrix)
         rcond = Inversion_results.ParamsVid.inversion_parameter.get('rcond')
         solver_dict = {'rcond' : rcond}
-        c = Inversion_results.ParamsVid.inversion_parameter.get('c')
+        c = Inversion_results.ParamsVid.dict_denoising.get('c')
         c = c or 3
 
         try:
@@ -819,6 +819,7 @@ def denoising(Inversion_results):
         except:
             inversion.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
             inversion._normalise_wo_mat()
+            os.makedirs(os.path.dirname(Inversion_results.path_inverse_matrix), exist_ok = True)
             inversion.save_decomposition(Inversion_results.path_inverse_matrix)
         images = Inversion_results.vid[:, Inversion_results.mask_pixel]
 
@@ -832,7 +833,7 @@ def denoising(Inversion_results):
         simple_base = csr_matrix(np.eye( Inversion_results.transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(Inversion_results.transfert_matrix)
         
-        c = Inversion_results.ParamsVid.inversion_parameter.get('c')
+        c = Inversion_results.ParamsVid.dict_denoising.get('c')
         c = c or 3
 
         try:
@@ -841,6 +842,7 @@ def denoising(Inversion_results):
         except:
             inversion.decompose(transfert_matrix, simple_base)
             inversion._normalise_wo_mat()
+            os.makedirs(os.path.dirname(Inversion_results.path_inverse_matrix), exist_ok = True)
             inversion.save_decomposition(Inversion_results.path_inverse_matrix)
         images = Inversion_results.vid[:, Inversion_results.mask_pixel]
 
