@@ -764,3 +764,91 @@ def reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_
         mask_noeud_out[noeuds_mask[visible_nodes]] = 1
         mask_noeud_out = mask_noeud_out.reshape(mask_noeud.shape)
         return transfert_matrix_out, pixels_out, noeuds_out, mask_pixel_out, mask_noeud_out
+
+
+
+def inverse_vid_from_class(Transfert_Matrix, Inversion_results, ParamsMachine, ParamsGrid, ParamsVid):
+    
+    
+    #initisalisation
+    # images = np.reshape(vid, (vid.shape[0], vid.shape[1]*vid.shape[2]))
+    # images = images[:, mask_pixel]
+
+    #prep transfert matrix for inversion
+
+    import time
+    start = time.time()
+    transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = prep_inversion(Transfert_Matrix.transfert_matrix, Transfert_Matrix.mask_pixel, Transfert_Matrix.mask_noeud, Transfert_Matrix.pixels, Transfert_Matrix.noeuds, ParamsVid.inversion_parameter, Transfert_Matrix.R_noeud, Transfert_Matrix.Z_noeud)
+    end = time.time()
+    elapsed = end-start
+    print(f"Preparation transfert_matrix : {elapsed:.3f} seconds")
+
+    images = Inversion_results.vid[:, mask_pixel]
+    inversion_results, inversion_results_normed, inversion_results_thresolded,inversion_results_thresolded_normed, images_retrofit, transfert_matrix = inversion_and_thresolding(images, 
+                                                                                                                                                               transfert_matrix,                                                                                                                                                             
+                                                                                                                                                               ParamsVid.inversion_method,
+                                                                                                                                                               Transfert_Matrix.filename + '/' + ParamsVid.filename + 'inverse_matrix',
+                                                                                                                                                               ParamsVid.dict_denoising,
+                                                                                                                                                               inversion_parameter=ParamsVid.inversion_parameter)
+    Inversion_results.inversion_results = inversion_results
+    # Inversion_results.inversion_results_normed = inversion_results_normed
+    # Inversion_results.inversion_results_thresolded = inversion_results_thresolded
+    # Inversion_results.inversion_results_thresolded_normed = inversion_results_thresolded_normed
+    Inversion_results.images_retrofit = images_retrofit
+    return Inversion_results
+
+
+def denoising(Inversion_results):
+    from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
+    if Inversion_results.ParamsVid.inversion_method == 'Bob':
+        
+
+
+
+        inversion = Bob()
+        simple_base = csr_matrix(np.eye( Inversion_results.transfert_matrix.shape[1] ))
+        transfert_matrix = csr_matrix(Inversion_results.transfert_matrix)
+        rcond = Inversion_results.ParamsVid.inversion_parameter.get('rcond')
+        solver_dict = {'rcond' : rcond}
+        c = Inversion_results.ParamsVid.inversion_parameter.get('c')
+        c = c or 3
+
+        try:
+            inversion.load_decomposition(Inversion_results.path_inverse_matrix)
+            print('successfully loaded inverse matrix')
+        except:
+            inversion.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
+            inversion._normalise_wo_mat()
+            inversion.save_decomposition(Inversion_results.path_inverse_matrix)
+        images = Inversion_results.vid[:, Inversion_results.mask_pixel]
+
+        inv_images_thresolded = np.squeeze(inversion.thresholding(images.T, c = c))
+        return inv_images_thresolded.T
+
+    elif Inversion_results.ParamsVid.inversion_method == 'SparseBob':
+       
+
+        inversion = SparseBob()
+        simple_base = csr_matrix(np.eye( Inversion_results.transfert_matrix.shape[1] ))
+        transfert_matrix = csr_matrix(Inversion_results.transfert_matrix)
+        
+        c = Inversion_results.ParamsVid.inversion_parameter.get('c')
+        c = c or 3
+
+        try:
+            inversion.load_decomposition(Inversion_results.path_inverse_matrix)
+            print('successfully loaded inverse matrix')
+        except:
+            inversion.decompose(transfert_matrix, simple_base)
+            inversion._normalise_wo_mat()
+            inversion.save_decomposition(Inversion_results.path_inverse_matrix)
+        images = Inversion_results.vid[:, Inversion_results.mask_pixel]
+
+
+        inv_images_thresolded = np.zeros((transfert_matrix.shape[1], images.shape[0]))
+        for i in range(images.shape[0]):
+            image = images.T[:, i]
+            inv_images_thresolded[:, i] = np.squeeze(inversion.thresholding(image[:, np.newaxis], c = c))
+        #     inv_images_thresolded_normed[i, :] = inv_image
+
+        return inv_images_thresolded.T

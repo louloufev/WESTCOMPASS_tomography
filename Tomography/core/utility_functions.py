@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import pdb
 import os
 import imageio
+from .inversion_module import reconstruct_2D_image
 
 def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, vmin = None, title = '', cmap = 'viridis'):
     path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
@@ -72,6 +73,8 @@ def plot_image(image_raw, xlabel = None, ylabel = None, percentile_inf = None, p
 
 import tkinter as tk
 from tkinter import filedialog
+
+
 
 def get_file(title = "Select file", path_root = None, full_path = 0):
     root = tk.Tk()
@@ -707,3 +710,81 @@ def arrays_to_side_by_side_video(arr1, arr2, filename="output.mp4", fps=20, norm
         out.write(frame)
     out.release()
     print(f"Video saved to {filename}")
+
+
+
+def filename_contains_folder(filename: str, folder: str) -> bool:
+    """
+    Check if the filename already contains the folder name.
+    
+    Args:
+        filename (str): The full or relative path to a file.
+        folder (str): The folder name (not necessarily full path).
+    
+    Returns:
+        bool: True if folder is part of filename path, False otherwise.
+    """
+    # Normalize paths
+    filename_path = os.path.normpath(filename)
+    folder_name = os.path.basename(os.path.normpath(folder))
+    
+    # Split filename into parts and check
+    return folder_name in filename_path.split(os.sep)
+
+
+def reconstruct_2D_image_all_slices(x_2d, mask):
+    return np.array([reconstruct_2D_image(arr, mask) for arr in x_2d])
+
+
+def save_array_as_video(array, filename, fps=20):
+    """
+    Save a 3D or 4D numpy array as a video file.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        Video frames. 
+        - If shape is (T, H, W): grayscale frames
+        - If shape is (T, H, W, 3): color frames (RGB)
+    filename : str
+        Output video filename (e.g., 'output.mp4' or 'output.avi')
+    fps : int
+        Frames per second
+    """
+    # Check dimensions
+    if array.ndim not in (3, 4):
+        raise ValueError("Array must be 3D (T,H,W) or 4D (T,H,W,C)")
+
+    T = array.shape[0]
+    H, W = array.shape[1:3]
+
+    # Choose color or grayscale
+    if array.ndim == 3:
+        is_color = False
+    else:
+        if array.shape[3] == 3:
+            is_color = True
+        else:
+            raise ValueError("Last dimension must be 3 for RGB color frames")
+
+    # Normalize if needed
+    if array.dtype != np.uint8:
+        array = (255 * (array - array.min()) / (array.max() - array.min())).astype(np.uint8)
+
+    # OpenCV wants BGR, not RGB
+    if is_color:
+        array = array[..., ::-1]
+
+    # Define codec and create VideoWriter
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # or 'XVID' for .avi
+    out = cv2.VideoWriter(filename, fourcc, fps, (W, H), isColor=is_color)
+
+    # Write frames
+    for i in range(T):
+        frame = array[i]
+        if not is_color:
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)  # convert grayscale to BGR
+        out.write(frame)
+
+    out.release()
+    print(f"Video saved as {filename}")
