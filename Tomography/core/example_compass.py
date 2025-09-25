@@ -36,8 +36,8 @@ symetry = 'magnetic' #hypothesis on the emissivity uniformity. Can be set to 'to
 # parameters for dimension of the 2D plane
 phi_grid = 150 #toroidal angle (in degrees)
 n_polar = 1800 # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
-dr_grid = 1e-3 #radius step of 2D grid
-dz_grid = 1e-3 #height step of 2D grid
+dr_grid = 2e-3 #radius step of 2D grid
+dz_grid = 2e-3 #height step of 2D grid
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
 grid_precision_multiplier = 4
 variant_mag='V4_std_O'
@@ -65,10 +65,10 @@ decimation = 1 # int : used to average camera data into blocks of pixels; useful
 
 
 # input for video : specify what section of the video to load. 
-time_input = [1.150, 1.151]
-# time_input = None # [t0, t1] in seconds
-frame_input = None
-# frame_input = [54001, 54400] # number of the frames
+# time_input = [1.150, 1.151]
+time_input = None # [t0, t1] in seconds
+# frame_input = None
+frame_input = [54001, 54400] # number of the frames
             # if left at none, will treat the whole video
             # if both specified, will take time_input over frame_input
 

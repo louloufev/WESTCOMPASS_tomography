@@ -450,7 +450,7 @@ class Inversion_results(TomographyResults):
         
         return utility_functions.reconstruct_2D_image_all_slices(self.images_retrofit, self.mask_pixel)
     @property
-    def inversion_results_full_thresolded(self):
+    def inversion_results_full_thresholded(self):
         if self._prep_inversion:
             if self.inversion_parameter != self.ParamsVid.inversion_parameter:
                 self.prep_inversion()
@@ -462,7 +462,7 @@ class Inversion_results(TomographyResults):
         return  utility_functions.reconstruct_2D_image_all_slices(self.inversion_results_thresholded, self.mask_noeud)
 
 
-    def inversion_results_full_normalized_thresolded(self):
+    def inversion_results_full_normalized_thresholded(self):
         if self._prep_inversion:
             if self.inversion_parameter != self.ParamsVid.inversion_parameter:
                 self.prep_inversion()
@@ -535,7 +535,7 @@ class Inversion_results(TomographyResults):
 
         #retro fit
         plt.subplot(2,2,2)
-        plt.imshow(self.inversion_results_full_thresolded[frame, :, :].T, extent = extent, origin='lower')
+        plt.imshow(self.inversion_results_full_thresholded[frame, :, :].T, extent = extent, origin='lower')
         plt.colorbar()
         plt.xlabel('R [m]')
         plt.ylabel('Z [m]')
@@ -550,7 +550,7 @@ class Inversion_results(TomographyResults):
         plt.title('inversion results normalized')
 
         plt.subplot(2,2,4)
-        plt.imshow(self.inversion_results_full_normalized_thresolded()[frame, :, :].T, extent = extent, origin='lower')
+        plt.imshow(self.inversion_results_full_normalized_thresholded()[frame, :, :].T, extent = extent, origin='lower')
         plt.xlabel('R [m]')
         plt.ylabel('Z [m]')
         plt.title('inversion results normalized and thresholded') 
@@ -565,7 +565,7 @@ class Inversion_results(TomographyResults):
         plt.subplot(1, 2,1)
         plt.imshow(self.inversion_results_full[frame, :, :].T, origin='lower', extent = extent, vmin = vmin, vmax = vmax)
         plt.colorbar()
-        plt.title('inversion results normalized and thresolded')
+        plt.title('inversion results normalized and thresholded')
 
         #retro fit
         plt.subplot(1,2,2)
