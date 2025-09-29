@@ -192,13 +192,13 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
 
 
     realcam = load_camera(ParamsMachine.path_calibration)
-    if ParamsMachine.machine == 'WEST':
-        check_shot_and_video(ParamsVid.nshot, path_vid)
+    # if ParamsMachine.machine == 'WEST':
+    #     check_shot_and_video(ParamsVid.nshot, path_vid)
     mask_pixel, name_mask = load_mask(ParamsMachine.path_calibration, ParamsMachine.path_mask)
 
     #load image data
     ##### handle the cases for treating simple images
-    [name_vid, ext] = os.path.splitext(path_vid)
+    # [name_vid, ext] = os.path.splitext(path_vid)
 
 #check surface
     name_material, wall_material = recognise_material(ParamsMachine.name_material)
@@ -220,29 +220,29 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
         n_polar = ParamsGrid.n_polar
 
 
-# #loading wall coordinates
-#     try:
-#         fwall = loadmat(ParamsMachine.path_wall)
-#         RZwall = fwall['RZwall']
+#loading wall coordinates
+    try:
+        fwall = loadmat(ParamsMachine.path_wall)
+        RZwall = fwall['RZwall']
 
-#     except:
-#         RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
-#     #check that the last element is the neighbor of the first one and not the same one
-#     if(RZwall[0]==RZwall[-1]).all():
-#         RZwall = RZwall[:-1]
-#         print('erased last element of wall')
-#     #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
-#     R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
-#     Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
-#     theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
-#     theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
-#     print(RZwall[:5])
-#     # if theta2-theta1<0:
-#     #     RZwall = RZwall[::-1]
-#     #     print('wall reversed')
-#     print(RZwall[:5])
-#     R_wall = RZwall[:, 0]
-#     Z_wall = RZwall[:, 1]
+    except:
+        RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
+    #check that the last element is the neighbor of the first one and not the same one
+    if(RZwall[0]==RZwall[-1]).all():
+        RZwall = RZwall[:-1]
+        print('erased last element of wall')
+    #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
+    R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
+    Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
+    theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
+    theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
+    print(RZwall[:5])
+    # if theta2-theta1<0:
+    #     RZwall = RZwall[::-1]
+    #     print('wall reversed')
+    print(RZwall[:5])
+    R_wall = RZwall[:, 0]
+    Z_wall = RZwall[:, 1]
 
     try:
         Inversion_results = result_inversion.Inversion_results({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid, ParamsVid=ParamsVid)
@@ -252,14 +252,14 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     except:
         print('no previous results found')
         
-    if ext == '.png':
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(ParamsVid)
-        t0 = 0
-        tstart = 0
-        tinv = 0
+    # if ext == '.png':
+    #     vid, len_vid,image_dim_y,image_dim_x, fps, frame_input = get_img(ParamsVid)
+    #     t0 = 0
+    #     tstart = 0
+    #     tinv = 0
     ####
-    else: #load videos
-        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = get_vid(ParamsVid)
+    # else: #load videos
+    vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = get_vid(ParamsVid)
     Inversion_results = result_inversion.Inversion_results({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid, ParamsVid=ParamsVid)
     Inversion_results.t_inv = t_inv
     #load mask, check size
@@ -270,12 +270,11 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
 
     if ParamsMachine.machine == 'WEST':
-        vid = np.swapaxes(vid, 1,2)
-        if image_dim_y == mask_pixel.shape[0] and ParamsMachine.param_fit==None:
-            vid = np.swapaxes(vid, 1,2)
-        
-        utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
-
+        mask_pixel = mask_pixel.T
+        # vid = np.swapaxes(vid, 1,2)
+        # if image_dim_y == mask_pixel.shape[0] and ParamsMachine.param_fit==None:
+        #     vid = np.swapaxes(vid, 1,2)
+    utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
     realcam, mask_pixel, vid = fit_size_all(realcam, mask_pixel, vid, ParamsMachine.param_fit)
     utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rezizing.gif', num_frames=100, cmap='viridis')
 
@@ -321,7 +320,7 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
         #calculate transfert matrix
         Transfert_Matrix = result_inversion.Transfert_Matrix({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid)
         Transfert_Matrix.mask_pixel = mask_pixel
-        Transfert_Matrix = get_transfert_matrix(Transfert_Matrix, realcam,  world, ParamsMachine, ParamsGrid, ParamsVid, Inversion_results)
+        Transfert_Matrix = get_transfert_matrix(Transfert_Matrix, realcam,  world, ParamsMachine, ParamsGrid, ParamsVid, Inversion_results, RZwall)
     end_time_get_parameters = time.time()-start_time_get_parameters
 
     start_time_get_equilibrium = time.time()
@@ -534,7 +533,7 @@ def get_name_extenstion(path):
 
     return name_shortened
 
-def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, ParamsGrid, ParamsVid, Inversion_results):
+def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, ParamsGrid, ParamsVid, Inversion_results, RZwall = None):
     """
     return transfert_matrix for west"
     """
@@ -553,7 +552,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
         RZwall = np.array([eq.first_wall.R,eq.first_wall.Z]).T
         RZwall =RZwall[:-1, :] 
         RZwall = RZwall[::-1]
-        
+    start = time.time()
 
     wall_limit = axisymmetric_mesh_from_polygon(RZwall)
     R_wall = RZwall[:, 0]
@@ -578,8 +577,8 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     R_min_noeud = R_min_noeud#-dr_grid
     Z_max_noeud = Z_max_noeud#+dz_grid
     Z_min_noeud = Z_min_noeud#-dz_grid
-    # R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[0.9, 0.0069587420250745,0.6801025165889444, -0.4519975310227926]
-
+    if ParamsMachine.machine == 'WEST':
+        R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[3.129871200000000, 1.834345700000000,0.798600000000000,-0.789011660000000]
 
     # if verbose:
     #     fig = utility_functions.plot_cylindrical_coordinates(RPHIZ)
@@ -620,7 +619,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
         elapsed = end - start
         print(f"Magnetic field lines calculation : {elapsed:.3f} seconds")
 
-        start = time.time()
+        
         cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r*ParamsGrid.grid_precision_multiplier, nb_noeuds_z*ParamsGrid.grid_precision_multiplier, wall_limit, ParamsGrid.crop_center)
         grid_mask_precision = grid_mask_precision[:, np.newaxis, :]
         grid_mask_precision = np.tile(grid_mask_precision, (1, n_polar, 1))
@@ -662,16 +661,13 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
 
     elif ParamsGrid.symetry == 'toroidal':
         phi_tour = n_polar
-        plasma2 = RayTransferCylinder(
-        radius_outer=cell_r[-1],
-        radius_inner=cell_z[0],
-        height=cell_z[-1] - cell_z[0],
-        n_radius=nb_noeuds_r, n_height=nb_noeuds_z, 
-        mask=grid_mask, n_polar=n_polar,
-        parent = world,
-        transform=translate(0, 0, cell_z[0])
-    )
-            
+        plasma2 = RayTransferCylinder(radius_outer=cell_r[-1],
+                                        radius_inner=cell_r[0],
+                                        height=cell_z[-1] - cell_z[0],
+                                        n_radius=nb_noeuds_r, n_height=nb_noeuds_z, 
+                                        mask=grid_mask, n_polar=n_polar, 
+                                        parent = world, transform=translate(0, 0, cell_z[0]))
+    
     else:
         raise(NameError('unrecognized symetry, write toroidal or magnetic'))
     # if verbose:
@@ -698,7 +694,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     end = time.time()
 
     elapsed = end - start
-    print(f"Magnetic field lines assignation : {elapsed:.3f} seconds")
+    print(f"time setup camera : {elapsed:.3f} seconds")
 
 
     realcam.observe()
@@ -706,7 +702,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     print('shape full transfert matrix = ' + str(pipelines.matrix.shape))
     flattened_matr = pipelines.matrix.reshape(pipelines.matrix.shape[0] * pipelines.matrix.shape[1], pipelines.matrix.shape[2])
     
-    if flattened_matr.shape[1] > num_points_rz: 
+    if flattened_matr.shape[1] > num_points_rz:
         #some elements of the grid don't see the field lines. Checking if they are out of the field of view of the camera
         invisible_nodes = np.sum(flattened_matr, 0)[-1]
         if invisible_nodes>0:
@@ -1104,7 +1100,7 @@ def call_module2_function(func_name, *args):
     print("Serialized Input Data Size:", len(serialized_input))
     # print(pickle.loads(serialized_input))
     # command = ["mamba", "run", "-n", "sparse_env", "python", "inversion_module.py"]
-    command = ["bash", "-c", "source activate inversion_env && python inversion_module.py"]
+    command = ["bash", "-c", "source activate python-3.11 && python inversion_module.py"]
     result = subprocess.run(
         command,
         input=serialized_input,  # Pass serialized data as binary input
@@ -1566,13 +1562,13 @@ def load_results_inversion(loading_folder, name_inversion_results):
 
 
 
-def call_function_in_environment(module_name, function_name, environment_name, args, kwargs):
+
+def call_function_in_environment(function_name, environment_name, *args):
     # Serialize the arguments and keyword arguments
     serialized_args = pickle.dumps(args)
-    serialized_kwargs = pickle.dumps(kwargs)
 
     # Construct the command to call the function in the specified environment
-    command = [environment_name, '-c', f'import pickle; import {module_name}; {function_name}(pickle.loads({serialized_args!r}), pickle.loads({serialized_kwargs!r}))']
+    command = [environment_name, '-c', f'import pickle; {function_name}(pickle.loads({serialized_args!r}), pickle.loads({serialized_kwargs!r}))']
 
     # Run the command using subprocess
     result = subprocess.run(command, capture_output=True, text=True, shell=True)
@@ -1584,6 +1580,53 @@ def call_function_in_environment(module_name, function_name, environment_name, a
 
     # Return the output of the function
     return result.stdout.strip()
+
+def call_module_function_in_environment(module_name, function_name, environment_name, *args):
+    # Serialize the arguments and keyword arguments
+    
+    serialized_args = [serialize_data(arg) for arg in args]
+    input_data = {"func_name": function_name, "args": serialized_args}
+    print(sys.version)
+    # Debug: Check the size of serialized data
+    serialized_input = pickle.dumps(input_data)
+    print("Serialized Input Data Size:", len(serialized_input))
+    # print(pickle.loads(serialized_input))
+    # command = ["mamba", "run", "-n", "sparse_env", "python", "inversion_module.py"]
+    command = ["bash", "-c", f"source activate {environment_name} && python {module_name}.py"]
+    result = subprocess.run(
+        command,
+        input=serialized_input,  # Pass serialized data as binary input
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    # result = subprocess.run(
+    #     command,
+    #     input=serialized_input,  # Pass serialized data as binary input
+    #     stdout=None,
+    #     stderr=None,
+    # )
+    # if result.stderr:
+    #     raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
+    # else:
+    #     print("Subprocess completed successfully or stderr not captured.")
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
+
+    return pickle.loads(result.stdout)
+    # # Construct the command to call the function in the specified environment
+    # command = [environment_name, '-c', f'import pickle; import {module_name}; {function_name}(pickle.loads({serialized_args!r}), pickle.loads({serialized_kwargs!r}))']
+    # pdb.set_trace()
+    # # Run the command using subprocess
+    # result = subprocess.run(command, capture_output=True, text=True, shell=True)
+
+    # # Check for errors
+    # if result.returncode != 0:
+    #     print(f"Error: {result.stderr}")
+    #     return None
+
+    # # Return the output of the function
+    # return result.stdout.strip()
 
 
 class separatrix_map:
@@ -1769,23 +1812,35 @@ def convert_npz_to_mat(file_path = None):
 
 
 def remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z):
-    magflux = imas_west.get(61636, 'equilibrium', 0, 1)
+    nshot = 61357
     idx = 100
-    r = magflux.interp2D.r
-    z = magflux.interp2D.z
-    psi = magflux.interp2D.psi[idx, ...]
-    #get psi norm
-    # self.r0 = 
-    # self.z0 = 
-    # self.psi_norm = magflux.interp2D.psi[idx, :, :]/magflux.boundary.psi[idx]
-    # self.rsep = magflux.boundary.r[idx, :] doesn't exist
-    # self.zsep = magflux.boundary.z[idx, :] doesn't exist
-    psisep = magflux.boundary.psi[idx]
-    psi0 = np.nanmax(psi)
 
-    psi_int = 0.9*(psisep-psi0)+psi0
-    # RZpoints = np.column_stack((X.ravel(), Y.ravel()))  # shape (N, 2)
-    # flat_psi = psi.ravel()  # shape (N,)
+    try:
+        magflux = call_module_function_in_environment('west_functions','get_equilibrium', 'python-3.11', nshot)
+
+        r = magflux.interp2D.r
+        z = magflux.interp2D.z
+        psi = magflux.interp2D.psi[idx, ...]
+
+        #get psi norm
+        # self.r0 = 
+        # self.z0 = 
+        # self.psi_norm = magflux.interp2D.psi[idx, :, :]/magflux.boundary.psi[idx]
+        # self.rsep = magflux.boundary.r[idx, :] doesn't exist
+        # self.zsep = magflux.boundary.z[idx, :] doesn't exist
+        psisep = magflux.boundary.psi[idx]
+        psi0 = np.nanmax(psi)
+
+        psi_int = 0.9*(psisep-psi0)+psi0
+    except:
+        magflux = loadmat('/Home/LF276573/Documents/MATLAB/shot 61357 sep 7_7s.mat', simplify_cells = True)
+        magflux = magflux['equi']
+        r = magflux['interp2D']['r']
+        z = magflux['interp2D']['z']
+        psi = magflux['interp2D']['psi'][idx, :, :]
+        psisep = magflux['boundary']['psi'][idx]
+        psi0 = np.nanmax(psi)
+        psi_int = 0.9*(psisep-psi0)+psi0
     # Create contour for just this isovalue
     contour = plt.contour(r, z, psi, levels=[psi_int], colors='red')
 
@@ -1944,7 +1999,6 @@ def smart_string_to_number(s):
 def read_CAD_from_calcam_module(path_CAD, world, name_material, wall_material, variant = 'Default'):
     import calcam
     CAD = calcam.CADModel(path_CAD, model_variant = variant)
-    CAD.enable_only(['Limiters', 'Vessel_midplane']) #ugly fix
     features = CAD.get_enabled_features()
     print(features)
 
