@@ -38,7 +38,7 @@ n_polar = 360 # number of toroidal points in 1 revolution for magnetic lines(onl
 dr_grid = 2e-3 #radius step of 2D grid
 dz_grid = 2e-3 #height step of 2D grid
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
-dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant_mag':'V4_std_O', 'revision':21, 'test':'angle2'}
+dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant_mag':'V4_std_O', 'revision':21}
 dict_denoising = {'c_c' :3, 'sigma' : 2, 'median' : 10}
 variant = '2018_11 - with midplane' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls

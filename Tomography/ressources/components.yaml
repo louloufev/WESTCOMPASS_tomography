@@ -39,3 +39,5 @@
 09_01_02_VDE_panel_vert: 'W bulk'
 09_02_ripples_horiz: 'CuCrZr'
 09_03_ripples_vert: 'CuCrZr'
+'Limiters' : 'W'
+'Vessel_midplane' : 'W'

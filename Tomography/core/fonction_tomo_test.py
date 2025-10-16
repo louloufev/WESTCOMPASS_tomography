@@ -2,16 +2,17 @@ import numpy as np
 from scipy.io import loadmat, savemat
 from scipy.sparse import csr_matrix, save_npz, csc_matrix, load_npz, isspmatrix
 from matplotlib import pyplot as plt
-from raysect.primitive import import_stl, import_obj
-from raysect.optical import World, translate, rotate, ConstantSF, Point3D
-from raysect.optical.observer import PinholeCamera, FullFrameSampler2D, RGBPipeline2D, VectorCamera
-from raysect.optical.material import  InhomogeneousVolumeEmitter, UniformVolumeEmitter, AbsorbingSurface, Lambert
+from raysect.primitive import import_stl, import_obj, Box
+from raysect.optical import World, translate, rotate, ConstantSF, Point3D, rotate_z
+from raysect.optical.observer import PinholeCamera, FullFrameSampler2D, RGBPipeline2D, VectorCamera,  RGBAdaptiveSampler2D
+from raysect.optical.material import UniformSurfaceEmitter, InhomogeneousVolumeEmitter, UniformVolumeEmitter, AbsorbingSurface, Lambert
 from cherab.tools.primitives.axisymmetric_mesh import axisymmetric_mesh_from_polygon
 from raysect.core.math.polygon import triangulate2d
 from cherab.tools.raytransfer import RayTransferPipeline2D, RayTransferCylinder
 from cherab.tools.raytransfer import RoughNickel, RoughTungsten
 import os 
-
+from raysect.optical.library.spectra.colours import *
+colours = [yellow, orange, red_orange, red, purple, blue, light_blue, cyan, green]
 from raysect.primitive import Cylinder, Subtract
 from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
 from cherab.tools.inversions import invert_regularised_nnls
@@ -45,13 +46,9 @@ from Tomography.ressources import components, paths
 # with open("/ressources/folder_paths.yaml", "r") as f:
 #     paths = yaml.safe_load(f)
 
-main_folder_transfert_matrices = paths["main_folder_transfert_matrices"]
-main_folder_resultat = paths["main_folder_resultat"]
 main_folder_image = paths["main_folder_image"]
 
-main_folder_calibration = paths["main_folder_calibration"]
 
-main_folder_CAD = paths["main_folder_CAD"]
 main_folder_processing = paths["main_folder_processing"]
 
 def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
@@ -150,7 +147,7 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
             emissivity plane from inversion, in the R, Z format
             NB : the nodes are saved in increasing in R and Z values, careful in using imshow to invert the Y axis of the plot as its default places the first element of the Y axis in the top
 
-            inversion_results_thresolded_full : 3D array (time, R, Z)
+            inversion_results_thresholded_full : 3D array (time, R, Z)
             Same as previous one, but after a denoising effect has been applied on the result
 
             pixels : 1D array
@@ -221,30 +218,34 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
 
 
 #loading wall coordinates
-    try:
-        fwall = loadmat(ParamsMachine.path_wall)
-        RZwall = fwall['RZwall']
+    if ParamsMachine.path_wall:
+        try:
+            fwall = loadmat(ParamsMachine.path_wall)
+            RZwall = fwall['RZwall']
 
-    except:
-        RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
-    #check that the last element is the neighbor of the first one and not the same one
-    if(RZwall[0]==RZwall[-1]).all():
-        RZwall = RZwall[:-1]
-        print('erased last element of wall')
-    #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
-    R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
-    Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
-    theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
-    theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
-    print(RZwall[:5])
-    # if theta2-theta1<0:
-    #     RZwall = RZwall[::-1]
-    #     print('wall reversed')
-    print(RZwall[:5])
-    R_wall = RZwall[:, 0]
-    Z_wall = RZwall[:, 1]
+        except:
+            RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
+        #check that the last element is the neighbor of the first one and not the same one
+        if(RZwall[0]==RZwall[-1]).all():
+            RZwall = RZwall[:-1]
+            print('erased last element of wall')
+        #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
+        R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
+        Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
+        theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
+        theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
+        print(RZwall[:5])
+        # if theta2-theta1<0:
+        #     RZwall = RZwall[::-1]
+        #     print('wall reversed')
+        print(RZwall[:5])
+        R_wall = RZwall[:, 0]
+        Z_wall = RZwall[:, 1]
+    else:
+        RZwall = None
 
     try:
+
         Inversion_results = result_inversion.Inversion_results({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid, ParamsVid=ParamsVid)
         Inversion_results = Inversion_results.load()
 
@@ -259,13 +260,14 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     #     tinv = 0
     ####
     # else: #load videos
-    vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = get_vid(ParamsVid)
+    vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = utility_functions.get_vid(ParamsVid)
     Inversion_results = result_inversion.Inversion_results({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid, ParamsVid=ParamsVid)
     Inversion_results.t_inv = t_inv
     #load mask, check size
     utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid.png')
     utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam.gif', num_frames=100, cmap='gray')
     mask_pixel = mask_pixel.T
+    mask_pixel = np.ascontiguousarray(mask_pixel)
     vid = np.swapaxes(vid, 1,2)
     utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
 
@@ -337,7 +339,7 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
 
     if ParamsVid.inversion_method == 'Cholmod' or ParamsVid.inversion_method == 'Mfr_Cherab':
         
-        inversion_results, inversion_results_normed, inversion_results_thresolded, inversion_results_thresolded_normed, images_retrofit, mask_noeud, transfert_matrix = call_module2_function("inverse_vid", 
+        inversion_results, inversion_results_normed, inversion_results_thresholded, inversion_results_thresholded_normed, images_retrofit, mask_noeud, transfert_matrix = call_module2_function("inverse_vid", 
                                                 transfert_matrix, 
                                                 mask_pixel, 
                                                 mask_noeud,
@@ -368,146 +370,6 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     return Inversion_results
 
 
-def get_vid(ParamsVid):
-    path_vid = ParamsVid.path_vid
-    time_input = ParamsVid.time_input
-    frame_input = ParamsVid.frame_input
-    nshot = ParamsVid.nshot
-    dict_denoising = ParamsVid.dict_denoising
-    time_input = ParamsVid.time_input
-    from scipy import ndimage
-    if path_vid:
-        
-        try:
-            import pyMRAW
-            images, data = pyMRAW.load_video(path_vid + '.chix')
-            fps = data['Record Rate(fps)']
-            image_dim_y = data['Image Height']
-            image_dim_x = data['Image Width']
-            NF = data['Total Frame']
-        except:
-            outdata = np.load(path_vid + '.npz', allow_pickle=True)
-            images = outdata["images"]
-            # data = outdata["data"]
-            # fps = data.item().get('Record Rate(fps)')
-            # image_dim_y = data.item().get('Image Height')
-            # image_dim_x = data.item().get('Image Width')
-            # NF = data.item().get('Total Frame')         
-            # t_start = data.item().get('t_start')
-
-            fps = outdata['fps'].item()
-
-            try:
-                skip_frame = outdata['skipFrame'].item()
-            except:
-
-                skip_frame = 1
-            fps = fps/skip_frame
-            image_dim_y = outdata['image_dim_y'].item()
-            image_dim_x = outdata['image_dim_x'].item()
-            NF = outdata['NF'].item()
-            t_start = outdata['t_start'].item()
-
-        if t_start is None:
-            t_start = input('no time saved for video, please enter time of first frame of video')
-            try:
-                t_start = float(t_start)
-            except:
-                raise(ValueError('Could not assign time start to video'))
-            utility_functions.add_variable_to_npz(path_vid + '.npz', 't_start', t_start)
-        if time_input:
-            frame_input = [int((time_input[0]-t_start)/fps),int((time_input[1]-t_start)/fps)]
-        if frame_input:
-            images = images[frame_input[0]:frame_input[1], :, :]
-        else:
-            frame_input = [0, NF-1]
-        t0 = t_start+frame_input[0]/fps
-    else:
-        RIS_number = 3
-        from . import RIS
-        try:
-            if not frame_input:
-                out = RIS.get_info(nshot, RIS_number)
-                frame_input =[0, out.daq_parameters.Images]
-            if time_input:
-                frame_start = int(RIS.time_to_frame(nshot, time_input[0], RIS = RIS_number)) 
-                frame_stop = int(RIS.time_to_frame(nshot, time_input[1], RIS = RIS_number)) 
-                frame_input = [frame_start, frame_stop]
-            stamp = 'frame'
-            flag, memory_required, available_memory = RIS.check_memory(nshot, frame_input,
-                                                            RIS = RIS_number, stamp = stamp)
-            flag = 0
-            if not flag:
-                video, frame_bounds = RIS.load(nshot, frame_input, RIS = RIS_number, stamp = stamp)
-            else:
-                raise Exception('fail to load video')
-            dict_video = RIS.get_info(nshot, RIS = RIS_number, origin = 'RAW')
-        except:
-            RIS_number = 4
-
-            if not frame_input:
-                out = RIS.get_info(nshot, RIS_number)
-                frame_input =[0, out.daq_parameters.Images]
-            if time_input:
-                frame_start = int(RIS.time_to_frame(nshot, time_input[0], RIS = RIS_number)) 
-                frame_stop = int(RIS.time_to_frame(nshot, time_input[1], RIS = RIS_number)) 
-                frame_input = [frame_start, frame_stop]
-            stamp = 'frame'
-            flag, memory_required, available_memory = RIS.check_memory(nshot, frame_input,
-                                                            RIS = RIS_number, stamp = stamp)
-            flag = 0
-            if not flag:
-                video, frame_bounds = RIS.load(nshot, frame_input, RIS = RIS_number, stamp = stamp)
-            else:
-                raise Exception('fail to load video')
-            dict_video = RIS.get_info(nshot, RIS = RIS_number, origin = 'RAW')
-        images = video.data
-        Flip = dict_video['daq_parameters']['Flip']
-        if Flip == 'Vertical':
-            images = np.flip(images, 1)#flipping the video back to its original state
-        elif Flip == 'Both':
-            images = np.flip(images, 1)
-            # images = np.flip(images, 2)
-        else:
-            raise(NameError('reshaping of raw data not supported. Update the get_vid function to handle this new case'))  
-        image_dim_y = dict_video['daq_parameters']['FrameH']
-        image_dim_x = dict_video['daq_parameters']['FrameW']
-        fps = dict_video['daq_parameters']['FrameRate']
-        images.dtype = 'int16'
-        
-        frame_input = frame_bounds
-        if dict_video['daq_parameters']['TrigType'] == 'Start':
-            t_start = dict_video['daq_parameters']['TriggerTime'] + dict_video['daq_parameters']['TriggerDelay']
-        else:
-            raise(NameError('Time trigger not recognized. Update the get_vid function to handle this new case'))
- 
-
-    sigma = dict_denoising.get('sigma')
-    sigma = sigma or 0
-    if sigma:
-        images = utility_functions.gaussian_blur_video(images, sigma=sigma)
-
-    median = dict_denoising.get('median')
-    median = median or 0
-    if median:
-        images_median = ndimage.median_filter(images, size=(median,1,1), mode = 'nearest')
-        images = images-images_median
-
-    if time_input:
-        name_time = 'time' + str(time_input[0]) + '_'   + str(time_input[1])
-        t0 = time_input[0]
-    else:
-        name_time = 'frame' + str(frame_input[0]) + '_'   + str(frame_input[1])
-        t0 = t_start+frame_input[0]/fps
-
-    if 'reduce_frames' in  dict_denoising.keys():
-        reduce_frames = dict_denoising['reduce_frames']
-        images = utility_functions.average_along_first_row(images,reduce_frames)
-        fps = fps/reduce_frames
-    t_inv = t0+np.arange(images.shape[0])/fps
-    return images, images.shape[0], image_dim_y, image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv 
-        
-
 
 def get_name(path):
     path = path.split('/')
@@ -537,7 +399,6 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     """
     return transfert_matrix for west"
     """
-    
     #get wall coordinates to get the cherab object
     if ParamsGrid.symetry == 'magnetic': #overwrites wall with the one saved in pleque
         t_pleque = Inversion_results.t_inv[len(Inversion_results.t_inv)//2] #choose middle time of the inversion for time of equilibrium
@@ -570,17 +431,25 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     # Z_max_noeud = pos_camera_RPHIZ[2] 
     # Z_min_noeud = pos_camera_RPHIZ[2] 
     # R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min = optimize_boundary_grid(realcam, world, R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud)
-
-
-    R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min, RPHIZ = optimize_grid_from_los(realcam, world, pos_camera_RPHIZ)
-    R_max_noeud = R_max_noeud#+dr_grid
-    R_min_noeud = R_min_noeud#-dr_grid
-    Z_max_noeud = Z_max_noeud#+dz_grid
-    Z_min_noeud = Z_min_noeud#-dz_grid
     if ParamsMachine.machine == 'WEST':
         R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[3.129871200000000, 1.834345700000000,0.798600000000000,-0.789011660000000]
+    else:
+        if ParamsGrid.phi_grid == 'auto':
+            R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min, RPHIZ = optimize_grid_from_los(realcam, world, pos_camera_RPHIZ)
+            print(R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min)
+            phi_grid = (phi_max+phi_min)/2*180/np.pi
+            print(phi_grid)
 
-    # if verbose:
+        else:
+            phi_grid = ParamsGrid.phi_grid
+        R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, dud1,dud2,  RPHIZ = optimize_grid_from_camera(realcam, phi_grid, RZwall,pos_camera_RPHIZ)
+        print(R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min)
+    if ParamsGrid.extra_steps:
+        R_max_noeud = R_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dr_grid
+        R_min_noeud = R_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dr_grid
+        Z_max_noeud = Z_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dz_grid
+        Z_min_noeud = Z_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dz_grid
+     # if verbose:
     #     fig = utility_functions.plot_cylindrical_coordinates(RPHIZ)
     #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,0,:], fig, color = 'blue', label = 'point [0,0]')
     #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,0,:], fig, color = 'red', label = 'point [-1,0]')
@@ -613,7 +482,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
                 
         start = time.time()
         
-        FL_MATRIX, dPhirad, phi_min, phi_mem = FL_lookup(eq, ParamsGrid.phi_grid, cell_r, cell_z, phi_min, phi_max, 0.5e-3, 0.2)
+        FL_MATRIX, dPhirad, phi_min, phi_mem = FL_lookup(eq, phi_grid, cell_r, cell_z, phi_min, phi_max, 0.5e-3, 0.2)
         end = time.time()
 
         elapsed = end - start
@@ -758,7 +627,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     Transfert_Matrix.pixels = pixels
     
     Transfert_Matrix.save()
-    "mask_noeud", "mask_pixel", "transfert_matrix", "noeuds", "pixels", "RZ_wall", "R_noeud", "Z_noeud"
+    "mask_noeud", "mask_pixel", "transfert_matrix", "noeuds", "pixels", "RZwall", "R_noeud", "Z_noeud"
 
     # try: 
     #     save_npz(path_transfert_matrix, transfert_matrix)
@@ -1359,8 +1228,8 @@ def get_consistent_colors(N):
 def plot_results_inversion_synth(node_full, 
                                  inv_image, 
                                  inv_normed, 
-                                 inv_image_thresolded, 
-                                 inv_image_thresolded_normed, 
+                                 inv_image_thresholded, 
+                                 inv_image_thresholded_normed, 
                                  image_retrofit, 
                                  image_full_noise, 
                                  image_full,
@@ -1374,8 +1243,8 @@ def plot_results_inversion_synth(node_full,
     c_c = 2
     inv_image_full = reconstruct_2D_image(inv_image, mask_noeud, nb_noeuds_r, nb_noeuds_z)
     inv_normed_full = reconstruct_2D_image(inv_normed, mask_noeud, nb_noeuds_r, nb_noeuds_z)    
-    inv_image_thresolded_full = reconstruct_2D_image(inv_image_thresolded, mask_noeud, nb_noeuds_r, nb_noeuds_z)
-    inv_image_thresolded_normed_full = reconstruct_2D_image(inv_image_thresolded_normed, mask_noeud, nb_noeuds_r, nb_noeuds_z)
+    inv_image_thresholded_full = reconstruct_2D_image(inv_image_thresholded, mask_noeud, nb_noeuds_r, nb_noeuds_z)
+    inv_image_thresholded_normed_full = reconstruct_2D_image(inv_image_thresholded_normed, mask_noeud, nb_noeuds_r, nb_noeuds_z)
     image_retrofit_full = reconstruct_2D_image(image_retrofit, mask_pixel, mask_pixel.shape[0], mask_pixel.shape[1])
     extent = (R_noeud[0], R_noeud[-1], Z_noeud[0], Z_noeud[-1])
     h = plt.figure()
@@ -1428,17 +1297,17 @@ def plot_results_inversion_synth(node_full,
     plt.title('inversed image normalized')
     #normed inversion
     plt.subplot(2,4, 7)
-    plt.imshow(inv_image_thresolded_full.T, extent = extent, origin = 'lower')
+    plt.imshow(inv_image_thresholded_full.T, extent = extent, origin = 'lower')
     plt.colorbar()
-    plt.title('inversed image thresolded, c_c = '+ str(c_c))
+    plt.title('inversed image thresholded, c_c = '+ str(c_c))
     plt.plot(R_wall, Z_wall, 'r')
     plt.xlabel('R [m]')
     plt.ylabel('Z [m]')
     #normed inversion
     plt.subplot(2,4, 8)
-    plt.imshow(inv_image_thresolded_normed_full.T, extent = extent, origin = 'upper')
+    plt.imshow(inv_image_thresholded_normed_full.T, extent = extent, origin = 'upper')
     plt.colorbar()
-    plt.title('inversed image thresolded and normalized, c_c = '+ str(c_c))
+    plt.title('inversed image thresholded and normalized, c_c = '+ str(c_c))
     plt.plot(R_wall, Z_wall, 'r')
     plt.xlabel('R [m]')
     plt.ylabel('Z [m]')
@@ -2000,9 +1869,13 @@ def read_CAD_from_calcam_module(path_CAD, world, name_material, wall_material, v
     import calcam
     CAD = calcam.CADModel(path_CAD, model_variant = variant)
     features = CAD.get_enabled_features()
+    components_list = set(components.keys())
+    enabled_features = list(components_list & set(features))
     print(features)
 
-    path_stl = [CAD.features[feature].filename for feature in features] 
+    CAD.enable_only(enabled_features)
+
+    path_stl = [CAD.features[feature].filename for feature in enabled_features] 
 
     wall_materials = read_material(path_stl, name_material, wall_material)
     full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = wall_materials[i], name = features[i]) for i, f in enumerate(path_stl)]
@@ -2139,6 +2012,7 @@ def load_mask(path_calibration, path_mask):
             calcam_camera = calcam.Calibration(path_calibration)
             mask_pixel = calcam_camera.subview_mask
             mask_pixel = np.invert(mask_pixel)
+            mask_pixel = np.ascontiguousarray(mask_pixel)
             name_mask = 'calibration_calcam'        
         except:
 
@@ -2452,3 +2326,88 @@ def load_transfert_matrix_and_parameters(path_parameters = None, path_transfert_
             mask_pixel, 
             mask_noeud,
             path_parameters)
+
+
+
+def optimize_grid_from_camera(realcam, phi_grid, RZwall, pos_camera_RPHIZ):
+    from matplotlib.pyplot import ion, ioff
+    world_intersection = World()
+    realcam_intersection = VectorCamera(realcam.pixel_origins, realcam.pixel_directions, parent = world_intersection, frame_sampler = FullFrameSampler2D(realcam.frame_sampler.mask))
+    x_lower = np.nanmin(RZwall[:, 0])
+    y_lower = 0
+    z_lower = np.nanmin(RZwall[:, 1])
+    lower_point = Point3D(x_lower, y_lower, z_lower)
+
+    x_upper = np.nanmax(RZwall[:, 0])
+    y_upper = 0.01
+    z_upper = np.nanmax(RZwall[:, 1])
+    upper_point = Point3D(x_upper, y_upper, z_upper)
+
+    fake_wall = Box(lower_point, upper_point, material=AbsorbingSurface(), parent=world_intersection, transform = rotate_z(phi_grid))
+    RPHIZ, Intersection = check_intersection_wall(realcam_intersection, world_intersection)
+    R_min_noeud = pos_camera_RPHIZ[0] 
+    R_max_noeud = pos_camera_RPHIZ[0] 
+    Z_min_noeud = pos_camera_RPHIZ[2] 
+    Z_max_noeud = pos_camera_RPHIZ[2] 
+
+
+    # for i in range(RPHIZ.shape[0]): 
+    #     for j in range(RPHIZ.shape[1]):
+
+    #         R_min, R_max, Z_min, Z_max = utility_functions.find_RZextrema_between_2_points(pos_camera_RPHIZ, RPHIZ[i, j, :])
+    #         R_min_noeud = min(R_min_noeud, R_min)
+    #         R_max_noeud = max(R_max_noeud, R_max)
+    #         Z_min_noeud = min(Z_min_noeud, Z_min)
+    #         Z_max_noeud = max(Z_max_noeud, Z_max)
+
+    R_max_noeud = np.nanmax(RPHIZ[:, :, 0])
+    R_min_noeud = np.nanmin(RPHIZ[:, :, 0])
+    Z_max_noeud = np.nanmax(RPHIZ[:, :, 2])
+    Z_min_noeud = np.nanmin(RPHIZ[:, :, 2])
+    
+    
+    #setting [-pi, pi] intervall back into [0, 2pi] intervall
+    RPHIZ[:, :, 1] = (RPHIZ[:, :, 1] +2*np.pi) % (2*np.pi)
+    
+    phi_min = min(pos_camera_RPHIZ[1], np.nanmin(RPHIZ[:, :, 1]))
+    phi_max = max(pos_camera_RPHIZ[1], np.nanmax(RPHIZ[:, :, 1]))
+
+    R_max_noeud = min(R_max_noeud, np.nanmax(RZwall[:, 0]))
+    R_min_noeud = max(R_min_noeud, np.nanmin(RZwall[:, 0]))
+    Z_max_noeud = min(Z_max_noeud, np.nanmax(RZwall[:, 1]))
+    Z_min_noeud = max(Z_min_noeud, np.nanmin(RZwall[:, 1]))
+        
+    world_rgb =World()
+    wall_limit = axisymmetric_mesh_from_polygon(RZwall)
+    wall_limit.parent = world_rgb
+    wall_limit.material = UniformVolumeEmitter(colours[1])
+    fake_wall = Box(lower_point, upper_point, material=UniformVolumeEmitter(colours[0]), parent=world_rgb, transform = rotate_z(phi_grid))
+
+    rgb = RGBPipeline2D()
+    sampler = RGBAdaptiveSampler2D(rgb, min_samples=100, fraction=0.2, cutoff=0.01)
+    # camera = VectorCamera(realcam.pixel_origins, realcam.pixel_directions, parent=world_rgb, pipelines=[rgb], frame_sampler=sampler)
+
+    camera = PinholeCamera((128, 256), parent=world_rgb, pipelines=[rgb], frame_sampler=sampler, transform = translate(0, 0, -4))
+    camera.spectral_rays = 1
+    camera.spectral_bins = 15
+    camera.pixel_samples = 250
+
+    ion()
+    name = 'transform test'
+    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    render_pass = 1
+    camera.observe()
+    # rgb.save("{}_{}_pass_{}.png".format(name, timestamp, render_pass))
+    # while not camera.render_complete:
+
+    #     print("Rendering pass {}...".format(render_pass))
+    #     camera.observe()
+    #     rgb.save("{}_{}_pass_{}.png".format(name, timestamp, render_pass))
+    #     print()
+
+    #     render_pass += 1
+
+    ioff()
+    rgb.display()
+
+    return R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min, RPHIZ

@@ -2597,7 +2597,6 @@ def smart_string_to_number(s):
 def read_CAD_from_calcam_module(path_CAD, world, name_material, wall_material, variant = 'Default'):
     import calcam
     CAD = calcam.CADModel(path_CAD, model_variant = variant)
-    CAD.enable_only(['Limiters', 'Vessel_midplane']) #ugly fix
     features = CAD.get_enabled_features()
     print(features)
 

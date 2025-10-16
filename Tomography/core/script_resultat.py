@@ -12,8 +12,11 @@ importlib.reload(utility_functions)
 
 Inversion_results = result_inversion.Inversion_results()
 Inversion_results = Inversion_results.from_file()
+Inversion_results.plot_simple(197, vmin = -300, vmax = 300)
 
-
-Inversion_results.plot_simple(10, vmin = -300, vmax = 300)
+Inversion_results.denoising()
+Inversion_results.plot_bob(197, vmin = -300, vmax = 300)
 
 Inversion_results.create_video()
+Inversion_results.create_video_peaks()
+Inversion_results.create_video_holes()
