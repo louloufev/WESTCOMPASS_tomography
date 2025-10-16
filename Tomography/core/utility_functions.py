@@ -5,6 +5,7 @@ import pdb
 import os
 import imageio
 from .inversion_module import reconstruct_2D_image
+from typing import Optional, Tuple
 
 def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, vmin = None, title = '', cmap = 'viridis'):
     path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
@@ -636,9 +637,10 @@ __all__ = ["plot_image"]
 
 
 import numpy as np
-import cv2
 
 def arrays_to_side_by_side_video(arr1, arr2, filename="output.mp4", fps=20, normalize=True):
+    import cv2
+
     """
     Create a side-by-side video from two 3D arrays (time, height, width).
     Adds a time overlay to each frame.
@@ -737,6 +739,8 @@ def reconstruct_2D_image_all_slices(x_2d, mask):
 
 
 def save_array_as_video(array, filename, fps=20):
+    import cv2
+
     """
     Save a 3D or 4D numpy array as a video file.
 
@@ -788,3 +792,294 @@ def save_array_as_video(array, filename, fps=20):
 
     out.release()
     print(f"Video saved as {filename}")
+
+
+
+
+
+
+def _to_uint8(frames: np.ndarray, vmin: Optional[float]=None, vmax: Optional[float]=None) -> np.ndarray:
+    """
+    Normalize a float or int array to uint8 in range 0..255.
+    frames: (T, H, W) or (H, W, T) already transformed before call.
+    """
+    # ensure float
+    f = frames.astype(np.float32)
+    if vmin is None:
+        vmin = float(np.nanmin(f))
+    if vmax is None:
+        vmax = float(np.nanmax(f))
+    if vmax == vmin:
+        # constant image -> mid-gray
+        out = np.clip(np.round((f - vmin) * 0 + 127), 0, 255).astype(np.uint8)
+        return np.repeat(out[np.newaxis, ...], f.shape[0], axis=0) if f.ndim == 3 else out
+    # linear scale
+    scaled = (f - vmin) / (vmax - vmin)
+    scaled = np.clip(scaled, 0.0, 1.0)
+    out = (scaled * 255.0).round().astype(np.uint8)
+    return out
+
+def array3d_to_video(arr: np.ndarray,
+                     out_path: str,
+                     fps: int = 25,
+                     vmin: Optional[float] = None,
+                     vmax: Optional[float] = None,
+                     percentile_sup : Optional[float] = None,
+                     percentile_inf : Optional[float] = None,
+                     codec: str = "libx264",
+                     quality: int = 8
+                    ) -> str:
+    """
+    Save a 3D numpy array to a video file without using cv2.
+    
+    Parameters
+    ----------
+    arr : np.ndarray
+        3D array representing frames. Accepted shapes:
+        - (T, H, W) : T frames of HxW grayscale images (preferred)
+        - (H, W, T) : T frames as last dimension (will be transposed)
+    out_path : str
+        Output filename (e.g., "out.mp4", "out.mkv"). Extension determines container.
+    fps : int
+        Frames per second.
+    vmin, vmax : optional floats
+        Min and max used for normalization. If None, computed from array.
+    codec : str
+        Codec string passed to imageio/ffmpeg (e.g. "libx264").
+    quality : int
+        Quality parameter (used by imageio when available; 0-10-ish, implementation-defined).
+    
+    Returns
+    -------
+    str
+        Path to the written video file.
+    
+    Notes
+    -----
+    - Uses `imageio` if installed; falls back to `matplotlib.animation.FFMpegWriter` if not.
+    - Requires ffmpeg on PATH for the matplotlib fallback; imageio may also require ffmpeg depending on backend.
+    - Input dtype can be float or int; the function scales values to uint8 0-255.
+    """
+    # Validate & rearrange shape to (T, H, W)
+    if arr.ndim != 3:
+        raise ValueError("Input array must be 3D (T, H, W) or (H, W, T).")
+    a = arr
+    
+    T, H, W = a.shape
+    
+    a = clip_to_percentiles(a, low = percentile_inf, high = percentile_sup)
+        
+    # Convert to uint8 frames: shape (T, H, W)
+    frames_u8 = _to_uint8(a, vmin=vmin, vmax=vmax)
+
+    # If imageio is available, prefer it
+    try:
+        import imageio.v2 as iio
+        # imageio expects (H,W) or (H,W,3). For grayscale it's fine.
+        ext = os.path.splitext(out_path)[-1].lower()
+        writer_kwargs = {}
+        # imageio's ffmpeg writer accepts 'quality' param in some versions; we pass it regardless.
+        try:
+            # new imageio v3 uses imageio.v3.get_writer
+
+            writer = iio.get_writer(out_path, format='FFMPEG', mode='I', fps=fps,
+                       codec='libx264',
+                       )
+            for frame in frames_u8:
+                writer.append_data(frame)
+            writer.close()
+        except:
+            pass
+    except Exception:
+        # If imageio not installed, try matplotlib's FFMpegWriter (requires ffmpeg in PATH)
+        try:
+            import matplotlib.pyplot as plt
+            from matplotlib.animation import FFMpegWriter
+            fig, ax = plt.subplots()
+            im = ax.imshow(frames_u8[0], cmap="gray", vmin=0, vmax=255)
+            ax.set_axis_off()
+            metadata = dict(title=os.path.basename(out_path), artist="array3d_to_video")
+            # bitrate ~ quality * 1000 heuristic; user can change if needed
+            bitrate = max(2000, quality * 1000)
+            writer = FFMpegWriter(fps=fps, metadata=metadata, bitrate=bitrate)
+            with writer.saving(fig, out_path, dpi=100):
+                for frame in frames_u8:
+                    im.set_array(frame)
+                    writer.grab_frame()
+            plt.close(fig)
+            return out_path
+        except Exception as e:
+            raise RuntimeError(
+                "Failed to write video: imageio not available and matplotlib/ffmpeg fallback failed.\n"
+                "Install imageio (`pip install imageio imageio-ffmpeg`) or ensure ffmpeg is on PATH for matplotlib fallback.\n"
+                f"Original error: {e}"
+            )
+        
+
+
+def prep_image(array, vmin = None, vmax = None, percentile_inf = None, percentile_sup = None):
+    vmin = vmin or np.min(array)
+    vmax = vmax or np.max(array)
+    percentile_inf = percentile_inf or 0
+    percentile_sup = percentile_sup or 1
+
+
+
+
+
+def get_vid(ParamsVid):
+    path_vid = ParamsVid.path_vid
+    time_input = ParamsVid.time_input
+    frame_input = ParamsVid.frame_input
+    nshot = ParamsVid.nshot
+    dict_vid = ParamsVid.dict_vid
+    time_input = ParamsVid.time_input
+    from scipy import ndimage
+    if path_vid:
+        
+        try:
+            import pyMRAW
+            images, data = pyMRAW.load_video(path_vid + '.chix')
+            fps = data['Record Rate(fps)']
+            image_dim_y = data['Image Height']
+            image_dim_x = data['Image Width']
+            NF = data['Total Frame']
+        except:
+            outdata = np.load(path_vid + '.npz', allow_pickle=True)
+            images = outdata["images"]
+            # data = outdata["data"]
+            # fps = data.item().get('Record Rate(fps)')
+            # image_dim_y = data.item().get('Image Height')
+            # image_dim_x = data.item().get('Image Width')
+            # NF = data.item().get('Total Frame')         
+            # t_start = data.item().get('t_start')
+
+            fps = outdata['fps'].item()
+
+            try:
+                skip_frame = outdata['skipFrame'].item()
+            except:
+
+                skip_frame = 1
+            fps = fps/skip_frame
+            image_dim_y = outdata['image_dim_y'].item()
+            image_dim_x = outdata['image_dim_x'].item()
+            NF = outdata['NF'].item()
+            t_start = outdata['t_start'].item()
+
+        if t_start is None:
+            t_start = input('no time saved for video, please enter time of first frame of video')
+            try:
+                t_start = float(t_start)
+            except:
+                raise(ValueError('Could not assign time start to video'))
+            add_variable_to_npz(path_vid + '.npz', 't_start', t_start)
+        if time_input:
+            frame_input = [int((time_input[0]-t_start)/fps),int((time_input[1]-t_start)/fps)]
+        if frame_input:
+            images = images[frame_input[0]:frame_input[1], :, :]
+        else:
+            frame_input = [0, NF-1]
+        t0 = t_start+frame_input[0]/fps
+    else:
+        RIS_number = 3
+        from . import RIS
+        try:
+            if not frame_input:
+                out = RIS.get_info(nshot, RIS_number)
+                frame_input =[0, out.daq_parameters.Images]
+            if time_input:
+                frame_start = int(RIS.time_to_frame(nshot, time_input[0], RIS = RIS_number)) 
+                frame_stop = int(RIS.time_to_frame(nshot, time_input[1], RIS = RIS_number)) 
+                frame_input = [frame_start, frame_stop]
+            stamp = 'frame'
+            flag, memory_required, available_memory = RIS.check_memory(nshot, frame_input,
+                                                            RIS = RIS_number, stamp = stamp)
+            flag = 0
+            if not flag:
+                video, frame_bounds = RIS.load(nshot, frame_input, RIS = RIS_number, stamp = stamp)
+            else:
+                raise Exception('fail to load video')
+            dict_video = RIS.get_info(nshot, RIS = RIS_number, origin = 'RAW')
+        except:
+            RIS_number = 4
+
+            if not frame_input:
+                out = RIS.get_info(nshot, RIS_number)
+                frame_input =[0, out.daq_parameters.Images]
+            if time_input:
+                frame_start = int(RIS.time_to_frame(nshot, time_input[0], RIS = RIS_number)) 
+                frame_stop = int(RIS.time_to_frame(nshot, time_input[1], RIS = RIS_number)) 
+                frame_input = [frame_start, frame_stop]
+            stamp = 'frame'
+            flag, memory_required, available_memory = RIS.check_memory(nshot, frame_input,
+                                                            RIS = RIS_number, stamp = stamp)
+            flag = 0
+            if not flag:
+                video, frame_bounds = RIS.load(nshot, frame_input, RIS = RIS_number, stamp = stamp)
+            else:
+                raise Exception('fail to load video')
+            dict_video = RIS.get_info(nshot, RIS = RIS_number, origin = 'RAW')
+        images = video.data
+        Flip = dict_video['daq_parameters']['Flip']
+        if Flip == 'Vertical':
+            images = np.flip(images, 1)#flipping the video back to its original state
+        elif Flip == 'Both':
+            images = np.flip(images, 1)
+            # images = np.flip(images, 2)
+        else:
+            raise(NameError('reshaping of raw data not supported. Update the get_vid function to handle this new case'))  
+        image_dim_y = dict_video['daq_parameters']['FrameH']
+        image_dim_x = dict_video['daq_parameters']['FrameW']
+        fps = dict_video['daq_parameters']['FrameRate']
+        images.dtype = 'int16'
+        
+        frame_input = frame_bounds
+        if dict_video['daq_parameters']['TrigType'] == 'Start':
+            t_start = dict_video['daq_parameters']['TriggerTime'] + dict_video['daq_parameters']['TriggerDelay']
+        else:
+            raise(NameError('Time trigger not recognized. Update the get_vid function to handle this new case'))
+ 
+
+    sigma = dict_vid.get('sigma')
+    sigma = sigma or 0
+    if sigma:
+        images = gaussian_blur_video(images, sigma=sigma)
+
+    median = dict_vid.get('median')
+    median = median or 0
+    if median:
+        images_median = ndimage.median_filter(images, size=(median,1,1), mode = 'nearest')
+        images = images-images_median
+
+    if time_input:
+        name_time = 'time' + str(time_input[0]) + '_'   + str(time_input[1])
+        t0 = time_input[0]
+    else:
+        name_time = 'frame' + str(frame_input[0]) + '_'   + str(frame_input[1])
+        t0 = t_start+frame_input[0]/fps
+
+    if 'reduce_frames' in  dict_vid.keys():
+        reduce_frames = dict_vid['reduce_frames']
+        images = average_along_first_row(images,reduce_frames)
+        fps = fps/reduce_frames
+    t_inv = t0+np.arange(images.shape[0])/fps
+    return images, images.shape[0], image_dim_y, image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv 
+        
+
+def clip_to_percentiles(data, low=10, high=90):
+    """
+    Clips values in 'data' to lie within the given percentile range.
+    
+    Parameters:
+        data (array-like): Input data (list, tuple, or NumPy array)
+        low (float): Lower percentile (default 10)
+        high (float): Upper percentile (default 90)
+        
+    Returns:
+        np.ndarray: Array with clipped values
+    """
+    data = np.asarray(data)
+    lower = np.percentile(data, low)
+    upper = np.percentile(data, high)
+    return np.clip(data, lower, upper)

@@ -13,7 +13,7 @@ from dataclasses import dataclass, asdict, field, is_dataclass, fields
 import hashlib
 import matplotlib.pyplot as plt
 
-
+from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified, inverse_vid_from_class
 def get_name(string):
     if string:
         return os.path.splitext(os.path.basename(string))[0]
@@ -72,10 +72,11 @@ class ParamsVid(Params):
     inversion_method : str = None
     nshot : int = None
     path_vid : str = None
-    dict_denoising : dict = field(default_factory=dict)
+    dict_vid : dict = field(default_factory=dict)
     time_input : np.array = None
     frame_input : np.array = None
     inversion_parameter : dict = field(default_factory=dict)
+    c : int = None
     class_name : str = 'ParamsVid'
     def to_filename(self, prefix="", ext="", sep="_", exclude=None):
         if exclude is None:
@@ -95,6 +96,7 @@ class ParamsGrid(Params):
     n_polar : int = None
     crop_center : bool = None
     class_name : str = 'ParamsGrid'
+    extra_steps: int = None
     def __post_init__(self):
         if not self.symetry:
             pass
@@ -226,7 +228,7 @@ class TomographyResults:
         if isinstance(value, np.ndarray):
             parent.create_dataset(key, data=value)
         elif isinstance(value, list):
-            parent.create_dataset(key, data=np.array(value))
+            parent.create_dataset(key, data=value)
         elif issparse(value):
             grp = parent.create_group(key)
             grp.attrs["_sparse"] = "csr_matrix"
@@ -385,6 +387,7 @@ class Inversion_results(TomographyResults):
         self.ParamsVid = ParamsVid
         self._Transfert_Matrix = None
         self._prep_inversion = False
+        self._redo_inversion = False
         super().__init__(data)
         # if "ParamsMachine" in data:
         #     self.ParamsMachine = data["ParamsMachine"]
@@ -403,19 +406,22 @@ class Inversion_results(TomographyResults):
 
         transfert_matrix = Transfert_Matrix(ParamsMachine = self.ParamsMachine, ParamsGrid = self.ParamsGrid)
         try:
-            self._Transfert_Matrix = transfert_matrix.load()
+            return  transfert_matrix.load()
         except:
             print(f"No transfert matrix found at {self.root_folder}/{self.ParamsMachine.filename}/{self.ParamsGrid.filename}")
+            return None
             # raise(ValueError(f"No transfert matrix found at {self.root_folder} / {self.ParamsMachine.filename}/ {self.ParamsGrid.filename}"))
-        return self._Transfert_Matrix
+        
     @property
     def Transfert_Matrix(self):
-        if self._Transfert_Matrix is None:
-            self._Transfert_Matrix = self.load_transfert_matrix()
+        if (self._Transfert_Matrix is None) or (type(self._Transfert_Matrix)) == str:
+            transfert_matrix = self.load_transfert_matrix()
+            self._Transfert_Matrix = transfert_matrix 
             print('successfully loaded Transfert Matrix')
         return self._Transfert_Matrix
 
     def prep_inversion(self):
+
         if self.ParamsVid.inversion_parameter:
             self.transfert_matrix, self.pixels, self.noeuds, self.mask_pixel, self.mask_noeud = inversion_module.prep_inversion(self.Transfert_Matrix.transfert_matrix, self.Transfert_Matrix.mask_pixel, self.Transfert_Matrix.mask_noeud, self.Transfert_Matrix.pixels, self.Transfert_Matrix.noeuds, self.ParamsVid.inversion_parameter, self.Transfert_Matrix.R_noeud, self.Transfert_Matrix.Z_noeud)
             print(f"successfully prepared transfert matrix, appling inversion parameter {self.ParamsVid.inversion_parameter}")
@@ -439,6 +445,13 @@ class Inversion_results(TomographyResults):
         
         return utility_functions.reconstruct_2D_image_all_slices(self.inversion_results, self.mask_noeud)
         
+
+    def redo_inversion_results(self):
+        self = inverse_vid_from_class(self.Transfert_Matrix,self, self.ParamsMachine, self.ParamsGrid, self.ParamsVid)
+    
+    def redo_video(self):
+        vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = utility_functions.get_vid(self.ParamsVid)
+        self.vid = np.swapaxes(vid, 1, 2)
 
     @property
     def images_retrofit_full(self):
@@ -573,11 +586,34 @@ class Inversion_results(TomographyResults):
         plt.colorbar()
         plt.title('Retro fit')
         plt.show(block = False)
-    def create_video(self, filename = None):
+    def create_video(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
         filename = filename or self.filename + 'vid.mp4'
-        array = np.swapaxes(self.inversion_results_full, 1,2)
-   
-        utility_functions.save_array_as_video(array, filename, fps=20)
+        if not array:
+            self.denoising()
+            array =  self.inversion_results_full_thresholded
+        if orientation == "default python":
+            array = np.swapaxes(array, 1,2)
+        if Yaxis == "default python":
+            array = np.flip(array, 1)
+        utility_functions.array3d_to_video(array, filename, fps=20, percentile_inf = percentile_inf, percentile_sup = percentile_sup)
+
+    def create_video_holes(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
+        filename = filename or self.filename + 'vidholes.mp4'
+        if not array:
+            self.denoising()
+            array =  self.inversion_results_full_thresholded
+        array[array>0] = 0
+        array = np.abs(array)
+        self.create_video(filename, array, orientation, Yaxis,percentile_inf = percentile_inf, percentile_sup = percentile_sup)
+
+    def create_video_peaks(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
+        filename = filename or self.filename + 'vidpeaks.mp4'
+        if not array:
+            self.denoising()
+            array =  self.inversion_results_full_thresholded
+        array[array<0] = 0
+        self.create_video(filename, array, orientation, Yaxis, percentile_inf = percentile_inf, percentile_sup = percentile_sup)
+
 
 class Transfert_Matrix(TomographyResults):
     required_keys = []
