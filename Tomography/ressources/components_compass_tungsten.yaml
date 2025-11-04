@@ -1,0 +1,12 @@
+---
+
+components:
+  Limiters:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+
+  Vessel_midplane:
+    class: RoughIron
+    params:
+      roughness : 0.5

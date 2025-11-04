@@ -9,7 +9,7 @@ from raysect.optical.material import UniformSurfaceEmitter, InhomogeneousVolumeE
 from cherab.tools.primitives.axisymmetric_mesh import axisymmetric_mesh_from_polygon
 from raysect.core.math.polygon import triangulate2d
 from cherab.tools.raytransfer import RayTransferPipeline2D, RayTransferCylinder
-from cherab.tools.raytransfer import RoughNickel, RoughTungsten
+from cherab.tools.raytransfer import RoughIron, RoughTungsten, RoughSilver
 import os 
 from raysect.optical.library.spectra.colours import *
 colours = [yellow, orange, red_orange, red, purple, blue, light_blue, cyan, green]
@@ -198,7 +198,7 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     # [name_vid, ext] = os.path.splitext(path_vid)
 
 #check surface
-    name_material, wall_material = recognise_material(ParamsMachine.name_material)
+    name_material = os.path.splitext(os.path.basename(ParamsMachine.name_material))
     if ParamsMachine.path_CAD:
         type_wall = 'CAD'
         name_CAD = os.path.splitext(os.path.basename(ParamsMachine.path_CAD))[0]
@@ -312,9 +312,13 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
         
         if ParamsMachine.path_CAD:
             try:
-                full_wall, name_material = read_CAD_from_calcam_module(ParamsMachine.path_CAD, world, name_material, wall_material, variant = ParamsMachine.variant_CAD)
+                # full_wall, name_material = read_CAD_from_calcam_module(ParamsMachine.path_CAD, world, name_material, wall_material, variant = ParamsMachine.variant_CAD)
+                full_wall = read_CAD_from_components(ParamsMachine, world)
             except:
+				
                 full_wall, name_material = read_CAD(ParamsMachine.path_CAD, world, name_material, wall_material, variant = ParamsGrid.variant_mag)
+                pdb.set_trace()
+
         else: 
             full_wall = axisymmetric_mesh_from_polygon(RZwall)
             full_wall.material = wall_material
@@ -1878,6 +1882,7 @@ def read_CAD_from_calcam_module(path_CAD, world, name_material, wall_material, v
     path_stl = [CAD.features[feature].filename for feature in enabled_features] 
 
     wall_materials = read_material(path_stl, name_material, wall_material)
+
     full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = wall_materials[i], name = features[i]) for i, f in enumerate(path_stl)]
     CAD.unload()
     return full_wall, name_material
@@ -2411,3 +2416,55 @@ def optimize_grid_from_camera(realcam, phi_grid, RZwall, pos_camera_RPHIZ):
     rgb.display()
 
     return R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min, RPHIZ
+
+
+
+def load_components(namefile, features):
+    import yaml
+    instances = []
+    namefile = namefile if namefile.endswith(".yaml") else namefile + ".yaml"
+    with open(namefile, "r") as f:
+        config = yaml.safe_load(f)
+
+    components_cfg = config["components"]
+    for name in features:
+        comp_cfg = components_cfg.get(name)
+        if comp_cfg is None:
+            raise ValueError(f"Component '{name}' not found in YAML.")
+
+        cls_name = comp_cfg["class"]
+        params = comp_cfg.get("params", {})
+        
+        # Assume class is already imported
+        cls = globals()[cls_name]
+        instance = cls(**params)
+        instances.append(instance) 
+    
+    return instances
+
+
+
+
+
+def read_CAD_from_components(ParamsMachine, world):
+    import calcam
+   
+    CAD = calcam.CADModel(ParamsMachine.path_CAD, model_variant = ParamsMachine.variant_CAD)
+    features = CAD.get_enabled_features()
+    components_list = set(components.keys())
+    enabled_features = list(components_list & set(features))
+    print(features)
+
+    CAD.enable_only(enabled_features)
+
+    path_stl = [CAD.features[feature].filename for feature in enabled_features] 
+
+    if ParamsMachine.name_material == "absorbing_surface":
+
+        full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = AbsorbingSurface(), name = features[i]) for i, f in enumerate(path_stl)]
+    else:
+        wall_materials = load_components(ParamsMachine.name_material, enabled_features)
+        full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = wall_materials[i], name = features[i]) for i, f in enumerate(path_stl)]
+
+    CAD.unload()
+    return full_wall

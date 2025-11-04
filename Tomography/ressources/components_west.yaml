@@ -1,0 +1,151 @@
+---
+
+components:
+  01_01_BAFFLE_pfus:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+
+  01_02_BAFFLE_poutre:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  01_03_BAFFLE_pei:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  01_04_BAFFLE_pannels:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  02_01_LOWER_DIVERTOR_C6_pfus:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+
+  02_01_LOWER_DIVERTOR_C6_pfus_with_MB:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+
+  02_02_LOWER_DIVERTOR_C6_tubes:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  02_03_LOWER_DIVERTOR_C6_water_boxes:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  03_01_UPPER_DIVERTOR_pfus:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+
+
+  03_02_UPPER_DIVERTOR_pipes:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  03_03_UPPER_DIVERTOR_water_boxes:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  04_01_INNER_WALL_pei:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  04_02_01_INNER_WALL_bumpers_middle:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  04_02_INNER_WALL_bumpers:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+
+  04_03_INNER_WALL_mirrors:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+
+  05_01_OUTER_WALL_pei:
+    class: RoughIron
+    params:
+      roughness : 0.5
+
+  06_01_01_ICRF_A1W_bumpers:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+
+  06_01_02_ICRF_A1W_grid:
+    class: RoughSilver
+    params:
+      roughness : 0.5
+
+  06_01_03_ICRF_A1W_pannel:
+    class: RoughIron
+    params:
+      roughness : 0.5
+  06_02_01_ICRF_A2W_bumpers:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+  06_02_02_ICRF_A2W_grid:
+    class: RoughSilver
+    params:
+      roughness : 0.5
+  06_02_03_ICRF_A2W_pannel:
+    class: RoughIron
+    params:
+      roughness : 0.5
+  06_03_01_ICRF_A3W_bumpers:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+  06_03_02_ICRF_A3W_grid:
+    class: RoughSilver
+    params:
+      roughness : 0.5
+
+  06_03_03_ICRF_A3W_pannel:
+    class: RoughIron
+    params:
+      roughness : 0.5
+  06_03_04_ICRF_A3W_protect:
+    class: RoughIron
+    params:
+      roughness : 0.5
+  06_12_24_IRCF_A3_full_shot_60074:
+    class: RoughIron
+    params:
+      roughness : 0.5
+  07_01_01_LH1_C3_bumpers:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+  07_01_02_01_LH1_C3_grid_passives:
+    class: RoughCopper
+    params:
+      roughness : 0.5
+  A:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+  A:
+    class: RoughTungsten
+    params:
+      roughness : 0.5
+  A:
+    class: RoughTungsten
+    params:
+      roughness : 0.5

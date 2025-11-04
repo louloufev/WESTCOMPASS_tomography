@@ -1004,10 +1004,10 @@ def get_vid(ParamsVid):
         except:
             RIS_number = 4
 
-            if not frame_input:
+            if frame_input is None:
                 out = RIS.get_info(nshot, RIS_number)
                 frame_input =[0, out.daq_parameters.Images]
-            if time_input:
+            if time_input is not None:
                 frame_start = int(RIS.time_to_frame(nshot, time_input[0], RIS = RIS_number)) 
                 frame_stop = int(RIS.time_to_frame(nshot, time_input[1], RIS = RIS_number)) 
                 frame_input = [frame_start, frame_stop]

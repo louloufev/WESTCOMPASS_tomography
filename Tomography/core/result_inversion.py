@@ -23,7 +23,7 @@ def get_name(string):
 @dataclass
 class Params:
     root_folder : str = None
-    
+
 
     @property
     def filename(self):
@@ -44,12 +44,12 @@ class Params:
             if not value:
                 return ""    # skip if empty dict
             name_dict_parameters = "_".join(f"{k}_{v}" for k, v in value.items())
-            return f"{key}-{name_dict_parameters}"   
+            return f"{key}-{name_dict_parameters}"
         elif isinstance(value, np.ndarray):
             return f"{key}-{value[0]}-{value[-1]}"
         elif isinstance(value, list):
             return f"{key}-{value[0]}-{value[-1]}"
-    
+
         elif value is None:
             return ""                          # skip if None
         else:
@@ -64,11 +64,11 @@ class Params:
                     parts.append(formatted)
 
         return sep.join([prefix] + parts) + f"{ext}"
-    
+
 
 @dataclass
 class ParamsVid(Params):
-    
+
     inversion_method : str = None
     nshot : int = None
     path_vid : str = None
@@ -80,12 +80,12 @@ class ParamsVid(Params):
     class_name : str = 'ParamsVid'
     def to_filename(self, prefix="", ext="", sep="_", exclude=None):
         if exclude is None:
-            exclude = ("root_folder", "class_name")  
+            exclude = ("root_folder", "class_name")
             # 👆 add subclass-specific exclusions
         return super().to_filename(prefix, ext, sep, exclude)
 @dataclass
 class ParamsGrid(Params):
-    
+    nshot : int = None
     dr_grid : float = None
     dz_grid : float = None
     symetry : str = 'toroidal'
@@ -106,26 +106,27 @@ class ParamsGrid(Params):
             self.symetry = 'magnetic'
         else:
             raise(ValueError(f"{self.symetry} is not a supported emissivity hypothesis"))
-        
+
     def to_filename(self, prefix="", ext="", sep="_", exclude=None):
         if exclude is None:
-            exclude = ("root_folder", "class_name")  
+            exclude = ("root_folder", "class_name")
             # 👆 add subclass-specific exclusions
         return super().to_filename(prefix, ext, sep, exclude)
 
 
 @dataclass
 class ParamsMachine(Params):
-    
+
     machine : str = None
     path_calibration : str= None
     path_wall : str = None
     path_CAD : str = None
-    variant_CAD : str = None
+    variant_CAD : str = 'Default'
     path_mask : str = None
     name_material : str = 'absorbing_surface'
     param_fit : str = None,
     decimation : int = 1
+
 
     class_name : str = 'ParamsMachine'
 
@@ -140,7 +141,7 @@ class ParamsMachine(Params):
             raise(ValueError('Unrecognized machine, type either compass or west'))
     def to_filename(self, prefix="", ext="", sep="_", exclude=None, full = False):
         if exclude is None:
-            exclude = ("root_folder", "class_name", "machine", "path_calibration", "path_CAD" ,"variant_CAD")  
+            exclude = ("root_folder", "class_name", "machine", "path_calibration", "path_CAD" ,"variant_CAD")
             # 👆 add subclass-specific exclusions
 
         return f"machine_{self.machine}/path_calibration_{get_name(self.path_calibration)}/path_CAD_{get_name(self.path_CAD)}_variant_CAD{self.variant_CAD}/" + super().to_filename(prefix, ext, sep, exclude, full)
@@ -156,7 +157,7 @@ class TomographyResults:
         if data:
             combined_data.update(data)
         combined_data.update(kwargs)
-         
+
         # Set attributes
         for key, value in combined_data.items():
             setattr(self, key, value)
@@ -173,7 +174,7 @@ class TomographyResults:
         except:
             self.root_folder = os.getcwd()
 
-    
+
 
     def update(self, data: dict = None, **kwargs):
         """
@@ -198,7 +199,7 @@ class TomographyResults:
 
 
     def load(self):
-        
+
         return self.load_h5(self.filename)
 
     def save_h5(self, filename):
@@ -348,9 +349,9 @@ class TomographyResults:
                     folder = "."
 
                 # List all .npz files in the folder
-                files = [f for f in os.listdir(folder) if f.endswith((".npz", ".mat"))]
+                files = [f for f in os.listdir(folder) if f.endswith((".npz", ".mat", ".h5"))]
                 if not files:
-                    print(f"No .npz or .mat files found in folder '{folder}'.")
+                    print(f"No .npz or .mat or .h5 files found in folder '{folder}'.")
                     return None
 
                 # Let user pick a file
@@ -360,7 +361,7 @@ class TomographyResults:
                 idx = int(input("Enter number: "))
                 filename = os.path.join(folder, files[idx])
 
-        
+
         return cls.load_h5(filename)
 
 def __str__(self):
@@ -411,12 +412,12 @@ class Inversion_results(TomographyResults):
             print(f"No transfert matrix found at {self.root_folder}/{self.ParamsMachine.filename}/{self.ParamsGrid.filename}")
             return None
             # raise(ValueError(f"No transfert matrix found at {self.root_folder} / {self.ParamsMachine.filename}/ {self.ParamsGrid.filename}"))
-        
+
     @property
     def Transfert_Matrix(self):
         if (self._Transfert_Matrix is None) or (type(self._Transfert_Matrix)) == str:
             transfert_matrix = self.load_transfert_matrix()
-            self._Transfert_Matrix = transfert_matrix 
+            self._Transfert_Matrix = transfert_matrix
             print('successfully loaded Transfert Matrix')
         return self._Transfert_Matrix
 
@@ -441,14 +442,14 @@ class Inversion_results(TomographyResults):
                 self.prep_inversion()
         else:
             self.prep_inversion()
-        
-        
+
+
         return utility_functions.reconstruct_2D_image_all_slices(self.inversion_results, self.mask_noeud)
-        
+
 
     def redo_inversion_results(self):
         self = inverse_vid_from_class(self.Transfert_Matrix,self, self.ParamsMachine, self.ParamsGrid, self.ParamsVid)
-    
+
     def redo_video(self):
         vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = utility_functions.get_vid(self.ParamsVid)
         self.vid = np.swapaxes(vid, 1, 2)
@@ -460,7 +461,7 @@ class Inversion_results(TomographyResults):
                 self.prep_inversion()
         else:
             self.prep_inversion()
-        
+
         return utility_functions.reconstruct_2D_image_all_slices(self.images_retrofit, self.mask_pixel)
     @property
     def inversion_results_full_thresholded(self):
@@ -471,7 +472,7 @@ class Inversion_results(TomographyResults):
         else:
             self.prep_inversion()
             self.denoising()
-       
+
         return  utility_functions.reconstruct_2D_image_all_slices(self.inversion_results_thresholded, self.mask_noeud)
 
 
@@ -483,7 +484,7 @@ class Inversion_results(TomographyResults):
         else:
             self.prep_inversion()
             self.denoising()
-       
+
         return  utility_functions.reconstruct_2D_image_all_slices(self.inversion_results_thresholded*self.norms().T, self.mask_noeud)
 
 
@@ -495,7 +496,7 @@ class Inversion_results(TomographyResults):
         else:
             self.prep_inversion()
             self.denoising()
-       
+
         return  utility_functions.reconstruct_2D_image_all_slices(self.inversion_results*self.norms().T, self.mask_noeud)
 
 
@@ -509,7 +510,8 @@ class Inversion_results(TomographyResults):
             self.inversion_results_thresholded = inversion_module.denoising(self)
         else:
             raise(ValueError('This method has no denoising method implemented'))
-    
+        self.inversion_parameter = self.ParamsVid.inversion_parameter
+
     @property
     def path_inverse_matrix(self):
         return self.Transfert_Matrix.filename + '/' + self.ParamsVid.filename +  'inverse_matrix'
@@ -517,7 +519,7 @@ class Inversion_results(TomographyResults):
     def norms(self):
         from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
         if (self.ParamsVid.inversion_method == 'SparseBob') or (self.ParamsVid.inversion_method == 'Bob'):
-            
+
             if (self.ParamsVid.inversion_method == 'SparseBob'):
                 inversion = SparseBob()
                 inversion.load_decomposition(self.path_inverse_matrix)
@@ -539,7 +541,7 @@ class Inversion_results(TomographyResults):
         vmax = vmax or np.max(self.inversion_results_full)
         vmin = vmin or np.min(self.inversion_results_full)
         extent = [self.Transfert_Matrix.R_noeud[0], self.Transfert_Matrix.R_noeud[-1], self.Transfert_Matrix.Z_noeud[0], self.Transfert_Matrix.Z_noeud[-1]]
-   
+
         #synthetic image
         plt.subplot(2,2,1)
         plt.imshow(self.inversion_results_full[frame, :, :].T, extent = extent, origin='lower', vmin = vmin, vmax = vmax)
@@ -566,7 +568,7 @@ class Inversion_results(TomographyResults):
         plt.imshow(self.inversion_results_full_normalized_thresholded()[frame, :, :].T, extent = extent, origin='lower')
         plt.xlabel('R [m]')
         plt.ylabel('Z [m]')
-        plt.title('inversion results normalized and thresholded') 
+        plt.title('inversion results normalized and thresholded')
         plt.show(block = False)
 
     def plot_simple(self, frame, vmin = None, vmax = None):
@@ -588,7 +590,7 @@ class Inversion_results(TomographyResults):
         plt.show(block = False)
     def create_video(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
         filename = filename or self.filename + 'vid.mp4'
-        if not array:
+        if array is None:
             self.denoising()
             array =  self.inversion_results_full_thresholded
         if orientation == "default python":
@@ -599,7 +601,7 @@ class Inversion_results(TomographyResults):
 
     def create_video_holes(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
         filename = filename or self.filename + 'vidholes.mp4'
-        if not array:
+        if array is None:
             self.denoising()
             array =  self.inversion_results_full_thresholded
         array[array>0] = 0
@@ -608,12 +610,26 @@ class Inversion_results(TomographyResults):
 
     def create_video_peaks(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
         filename = filename or self.filename + 'vidpeaks.mp4'
-        if not array:
+        if array is None:
             self.denoising()
             array =  self.inversion_results_full_thresholded
         array[array<0] = 0
         self.create_video(filename, array, orientation, Yaxis, percentile_inf = percentile_inf, percentile_sup = percentile_sup)
 
+
+    def create_synth_image(self, array):
+    # nodes array is supposed to be in the norm for plotting 2D images (vertical dimension first dimension, from up to bottom)
+        if self._prep_inversion:
+            if self.inversion_parameter != self.ParamsVid.inversion_parameter:
+                self.prep_inversion()
+        if np.squeeze(self.mask_noeud).shape != array.shape:
+            array = array.T #switch horizontal
+            array = np.flip(array, 1)
+        array_small = array[np.squeeze(self.mask_noeud)]
+        synth_image_small = self.transfert_matrix.dot(array_small)
+        synth_image = utility_functions.reconstruct_2D_image(synth_image_small, self.Transfert_Matrix.mask_pixel)
+        synth_image = synth_image.T #switch horizontal
+        return synth_image
 
 class Transfert_Matrix(TomographyResults):
     required_keys = []
@@ -635,4 +651,3 @@ class Transfert_Matrix(TomographyResults):
     @property
     def filename(self):
         return (self.root_folder + '/' + self.ParamsMachine.filename + '/' + self.ParamsGrid.filename)
-

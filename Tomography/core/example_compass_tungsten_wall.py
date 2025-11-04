@@ -46,7 +46,7 @@ revision = 21
 dict_vid = {'sigma' : 2, 'median' : 10}
 variant_CAD = '2018_11 - with midplane' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
-name_material =     'absorbing_surface'
+name_material =     'Tomography/ressources/components_compass_tungsten'
 c = 3
 
 
