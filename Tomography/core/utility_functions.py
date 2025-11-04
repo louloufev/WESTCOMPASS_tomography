@@ -974,9 +974,9 @@ def get_vid(ParamsVid):
             except:
                 raise(ValueError('Could not assign time start to video'))
             add_variable_to_npz(path_vid + '.npz', 't_start', t_start)
-        if time_input:
+        if time_input is not None:
             frame_input = [int((time_input[0]-t_start)/fps),int((time_input[1]-t_start)/fps)]
-        if frame_input:
+        if frame_input is not None:
             images = images[frame_input[0]:frame_input[1], :, :]
         else:
             frame_input = [0, NF-1]
@@ -985,10 +985,10 @@ def get_vid(ParamsVid):
         RIS_number = 3
         from . import RIS
         try:
-            if not frame_input:
+            if frame_input is None:
                 out = RIS.get_info(nshot, RIS_number)
                 frame_input =[0, out.daq_parameters.Images]
-            if time_input:
+            if time_input is not None:
                 frame_start = int(RIS.time_to_frame(nshot, time_input[0], RIS = RIS_number)) 
                 frame_stop = int(RIS.time_to_frame(nshot, time_input[1], RIS = RIS_number)) 
                 frame_input = [frame_start, frame_stop]
