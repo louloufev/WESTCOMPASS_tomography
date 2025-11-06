@@ -619,7 +619,7 @@ class Inversion_results(TomographyResults):
         if std_deviation_range is not None:
             Mean = np.mean(array[array!= 0])
             Std = np.std(array[array!= 0])
-            array[array<= Mean-std_deviation_range*Std] = Mean-std_deviation_range*Std
+            #array[array<= Mean-std_deviation_range*Std] = Mean-std_deviation_range*Std
             array[array>= Mean+std_deviation_range*Std] = Mean+std_deviation_range*Std
             
         self.create_video(filename, array, orientation, Yaxis)
@@ -637,7 +637,7 @@ class Inversion_results(TomographyResults):
         if std_deviation_range is not None:
             Mean = np.mean(array[array!= 0])
             Std = np.std(array[array!= 0])
-            array[array<= Mean-std_deviation_range*Std] = Mean-std_deviation_range*Std
+            #array[array<= Mean-std_deviation_range*Std] = Mean-std_deviation_range*Std
             array[array>= Mean+std_deviation_range*Std] = Mean+std_deviation_range*Std
         self.create_video(filename, array, orientation, Yaxis)
 
