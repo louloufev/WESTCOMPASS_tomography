@@ -605,8 +605,8 @@ class Inversion_results(TomographyResults):
             array = np.flip(array, 1)
         utility_functions.array3d_to_video(array, filename, fps=20, percentile_inf = percentile_inf, percentile_sup = percentile_sup)
 
-    def create_video_holes(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
-        filename = filename or self.filename + 'vidholes.mp4'
+    def create_video_holes(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", std_deviation_range = None):
+        filename = filename or self.filename + 'vidholes' + 'std_deviation_range' + str(std_deviation_range) + '.mp4'
         if array is None:
             try:
                 array =  self.inversion_results_full_thresholded
@@ -616,11 +616,16 @@ class Inversion_results(TomographyResults):
                 print('loaded thresolded inversion')
         array[array>0] = 0
         array = np.abs(array)
-        pdb.set_trace()
-        self.create_video(filename, array, orientation, Yaxis,percentile_inf = percentile_inf, percentile_sup = percentile_sup)
+        if std_deviation_range is not None:
+            Mean = np.mean(array[array!= 0])
+            Std = np.std(array[array!= 0])
+            array[array<= Mean-std_deviation_range*Std] = Mean-std_deviation_range*Std
+            array[array>= Mean+std_deviation_range*Std] = Mean+std_deviation_range*Std
+            
+        self.create_video(filename, array, orientation, Yaxis)
 
-    def create_video_peaks(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
-        filename = filename or self.filename + 'vidpeaks.mp4'
+    def create_video_peaks(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", std_deviation_range = None):
+        filename = filename or self.filename + 'vidpeaks' + 'std_deviation_range' + str(std_deviation_range) + '.mp4'
         if array is None:
             try:
                 array =  self.inversion_results_full_thresholded
@@ -629,7 +634,12 @@ class Inversion_results(TomographyResults):
                 array = self.inversion_results_full
                 print('loaded thresolded inversion')
         array[array<0] = 0
-        self.create_video(filename, array, orientation, Yaxis, percentile_inf = percentile_inf, percentile_sup = percentile_sup)
+        if std_deviation_range is not None:
+            Mean = np.mean(array[array!= 0])
+            Std = np.std(array[array!= 0])
+            array[array<= Mean-std_deviation_range*Std] = Mean-std_deviation_range*Std
+            array[array>= Mean+std_deviation_range*Std] = Mean+std_deviation_range*Std
+        self.create_video(filename, array, orientation, Yaxis)
 
 
     def create_synth_image(self, array):
