@@ -1078,3 +1078,17 @@ def clip_to_percentiles(data, low=0, high=100):
     lower = np.percentile(data, low)
     upper = np.percentile(data, high)
     return np.clip(data, lower, upper)
+
+def matstruct_to_dict(matobj):
+    """
+    Recursively convert MATLAB structs loaded by scipy.io.loadmat into Python dicts.
+    """
+    if isinstance(matobj, np.ndarray):
+        if matobj.size == 1:
+            return matstruct_to_dict(matobj[0, 0])
+        else:
+            return [matstruct_to_dict(el) for el in matobj.flat]
+    elif isinstance(matobj, np.void):  # MATLAB struct
+        return {name: matstruct_to_dict(matobj[name]) for name in matobj.dtype.names}
+    else:
+        return matobj
