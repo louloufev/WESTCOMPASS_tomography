@@ -61,7 +61,7 @@ def get_time(shot_number, RIS = 3, frame = None, origin = 'RAW', convention = 'M
     frame_rate = sr.daq_parameters.FrameRate # Hz
     trigger_time = sr.daq_parameters.TriggerTime + sr.daq_parameters.TriggerDelay # s
 
-    if frame == None:
+    if frame is None:
         frame_max = sr.daq_parameters.Images
         frame_stamp = np.arange(0,frame_max)
     else:
@@ -178,7 +178,7 @@ def load(shot_number, image_fetch = None, RIS = 3, origin = 'RAW', stamp = 'fram
     flag = check_in_resolution(shot_number, pixel_selection, RIS, origin)
     if flag == False:
         return
-    if image_fetch == None:
+    if image_fetch is None:
         sr = get_info(shot_number, RIS = RIS, origin = origin)
         image_fetch = np.arange(0, sr.daq_parameters.Images)
         stamp = 'frame'
@@ -201,7 +201,7 @@ def load(shot_number, image_fetch = None, RIS = 3, origin = 'RAW', stamp = 'fram
 
     try:
         id_ref = 'RIS.RISEye_' + str(RIS) + '.' + str(origin) + '/RIS:' + str(shot_number)
-        if pixel_selection == None:
+        if pixel_selection is None:
             video = cdb.get_signal(id_ref + '['+str(image_initial)+':'+str(image_final)+',:,:]')
         else:
             pixel_txt = str(pixel_selection[0]) + ':' + str(pixel_selection[1]) + ',' + str(pixel_selection[2]) + ':' + str(pixel_selection[3])
@@ -265,7 +265,7 @@ def check_memory(shot_number, image_fetch, RIS = 3, origin = 'RAW', threshold = 
 
     image_fetch = np.arange(image_initial, image_final)
 
-    if pixel_selection == None:
+    if pixel_selection is None:
         resolution = get_resolution(shot_number, RIS, origin)
         nber_pixels = resolution[0]*resolution[1]
     else:
@@ -276,7 +276,7 @@ def check_memory(shot_number, image_fetch, RIS = 3, origin = 'RAW', threshold = 
             bits = 16.
         else:
             print('Camera not implemented')
-            returns
+            return
     if origin == 'VIDEO':
         bits = 8.
 
@@ -311,7 +311,7 @@ def check_in_resolution(shot_number, pixel_selection, RIS = 3, origin = 'RAW'):
     resolution = get_resolution(shot_number, RIS = RIS, origin = origin)
 
     flag = True
-    if pixel_selection != None:
+    if pixel_selection is not None:
         if pixel_selection[1]>resolution[0] or pixel_selection[3]>resolution[1]:
             print('Problem in the pixel index chosen')
             print('pixel_selection: ' + str(pixel_selection))

@@ -810,9 +810,7 @@ def _to_uint8(frames: np.ndarray, vmin: Optional[float]=None, vmax: Optional[flo
     if vmax is None:
         vmax = float(np.nanmax(f))
     if vmax == vmin:
-        # constant image -> mid-gray
-        out = np.clip(np.round((f - vmin) * 0 + 127), 0, 255).astype(np.uint8)
-        return np.repeat(out[np.newaxis, ...], f.shape[0], axis=0) if f.ndim == 3 else out
+        raise(ValueError('single value arrays, try relaxing limit of arrays (extrema limits or percentile limits'))
     # linear scale
     scaled = (f - vmin) / (vmax - vmin)
     scaled = np.clip(scaled, 0.0, 1.0)
@@ -824,8 +822,8 @@ def array3d_to_video(arr: np.ndarray,
                      fps: int = 25,
                      vmin: Optional[float] = None,
                      vmax: Optional[float] = None,
-                     percentile_sup : Optional[float] = None,
-                     percentile_inf : Optional[float] = None,
+                     percentile_sup : Optional[float] = 100,
+                     percentile_inf : Optional[float] = 0,
                      codec: str = "libx264",
                      quality: int = 8
                     ) -> str:
@@ -871,7 +869,6 @@ def array3d_to_video(arr: np.ndarray,
         
     # Convert to uint8 frames: shape (T, H, W)
     frames_u8 = _to_uint8(a, vmin=vmin, vmax=vmax)
-
     # If imageio is available, prefer it
     try:
         import imageio.v2 as iio
@@ -889,7 +886,7 @@ def array3d_to_video(arr: np.ndarray,
                 writer.append_data(frame)
             writer.close()
         except:
-            pass
+            print('failed to write video')
     except Exception:
         # If imageio not installed, try matplotlib's FFMpegWriter (requires ffmpeg in PATH)
         try:
@@ -1067,7 +1064,7 @@ def get_vid(ParamsVid):
     return images, images.shape[0], image_dim_y, image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv 
         
 
-def clip_to_percentiles(data, low=10, high=90):
+def clip_to_percentiles(data, low=0, high=100):
     """
     Clips values in 'data' to lie within the given percentile range.
     
