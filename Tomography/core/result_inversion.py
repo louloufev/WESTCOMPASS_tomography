@@ -590,9 +590,15 @@ class Inversion_results(TomographyResults):
         plt.show(block = False)
     def create_video(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
         filename = filename or self.filename + 'vid.mp4'
+        pdb.set_trace()
         if array is None:
-            self.denoising()
-            array =  self.inversion_results_full_thresholded
+            try:
+                array =  self.inversion_results_full_thresholded
+                print('loaded thresolded inversion')
+            except:
+                array = self.inversion_results_full
+                print('loaded thresolded inversion')
+                    
         if orientation == "default python":
             array = np.swapaxes(array, 1,2)
         if Yaxis == "default python":
@@ -602,17 +608,26 @@ class Inversion_results(TomographyResults):
     def create_video_holes(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
         filename = filename or self.filename + 'vidholes.mp4'
         if array is None:
-            self.denoising()
-            array =  self.inversion_results_full_thresholded
+            try:
+                array =  self.inversion_results_full_thresholded
+                print('loaded thresolded inversion')
+            except:
+                array = self.inversion_results_full
+                print('loaded thresolded inversion')
         array[array>0] = 0
         array = np.abs(array)
+        pdb.set_trace()
         self.create_video(filename, array, orientation, Yaxis,percentile_inf = percentile_inf, percentile_sup = percentile_sup)
 
     def create_video_peaks(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
         filename = filename or self.filename + 'vidpeaks.mp4'
         if array is None:
-            self.denoising()
-            array =  self.inversion_results_full_thresholded
+            try:
+                array =  self.inversion_results_full_thresholded
+                print('loaded thresolded inversion')
+            except:
+                array = self.inversion_results_full
+                print('loaded thresolded inversion')
         array[array<0] = 0
         self.create_video(filename, array, orientation, Yaxis, percentile_inf = percentile_inf, percentile_sup = percentile_sup)
 
