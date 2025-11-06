@@ -19,32 +19,35 @@ from Tomography.core.fonction_tomo_test import full_inversion_toroidal
 ###### path parameters to look for calibrations, 3D models, etc..
 
 # mask for the camera
-path_mask = '/Home/LF276573/Zone_Travail/Python/CHERAB/masks/west/60990/custom_frame_421_1.npy'
-# nshot = '61363'
+path_mask =  '/Home/LF276573/Zone_Travail/Python/CHERAB/masks/west/60990/custom_frame_421_1.npy'
 
-path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
+# path_mask = None
 
-# paths_calibration = [path calibration 1, path calibration 2, ...] : path for calcam camera calibrations. Here it is put in an array to loop over different calibrations for testing
 # if the directory name has already been set in Tomography/ressources/folder_paths.yaml, you only need to put the name of the file, instead of the whole path
 path_calibration ='/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/camera calibrations/west/treated_calibrations/calibration_60851_retry.npz'
 # path for the limits of the vessel/ 3D model of the vessel. 
+# path_wall = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/COMPASS_RZ_vessel.mat'
+path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
 path_CAD ='/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/20250429 full model.ccm'
+######
 ###### raytracing parameters : parameters for the calculation of the geometry matrix
-symetry = 'toroidal'
 machine = 'WEST'
+symetry = 'toroidal' #hypothesis on the emissivity uniformity. Can be set to 'toroidal'
 # parameters for dimension of the 2D plane
-
-phi_grid = None
-dr_grid = 1e-2
-dz_grid = 1e-2
-decimation = 4
-crop_center = True
+phi_grid = None #toroidal angle (in degrees)
+n_polar = None # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
+dr_grid = 40e-3 #radius step of 2D grid
+dz_grid = 40e-3 #height step of 2D grid
+extra_steps = None
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
-
-dict_denoising = {'c' :3, 'sigma' : 2, 'median' : 10}
+grid_precision_multiplier = None
+variant_mag=None
+revision = None
+dict_vid = {'sigma' : 2, 'median' : 0}
 variant_CAD = 'Default' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
 name_material =     'absorbing_surface'
+c = 3
 
 
 ######
@@ -52,12 +55,12 @@ name_material =     'absorbing_surface'
 ###### inversion parameters : if a geometry matrix has already been measured with the previous parameters, will skip the raytracing and go straight into the inversion
 
 inversion_method = 'SparseBob' # see inversion_and_thresolding function in inversion_module module for list of choices 
-inversion_parameter = {}
+inversion_parameter = {'min_visibility_node': 1}
 # inversion_parameter = {}
 
     # min_visibility_node : 
 
-decimation = 1 # int : used to average camera data into blocks of pixels; useful for large number of pixels. 
+decimation = 8# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
     # decimation = 1 : takes all pixels
     # decimation = 2 : takes the mean value of 2*2 pixel block, effectively dividing by 4 the number of pixels
 
@@ -67,17 +70,10 @@ decimation = 1 # int : used to average camera data into blocks of pixels; useful
 # time_input = [1.150, 1.151]
 time_input = None # [t0, t1] in seconds
 # frame_input = None
-frame_input = None
- # number of the frames
+frame_input = [100, 200] # number of the frames
             # if left at none, will treat the whole video
             # if both specified, will take time_input over frame_input
 
-# paths_vid = ['/Home/LF276573/Zone_Travail/Python/CHERAB/videos/west/61357 avant XPR _S0001/61357 avant XPR _S0001',
-#              '/Home/LF276573/Zone_Travail/Python/CHERAB/videos/west/61357 apres XPR _S0001/61357 apres XPR _S0001',
-#              '/Home/LF276573/Zone_Travail/Python/CHERAB/videos/west/61537 avant xpr filtre azote_S0001/61537 avant xpr filtre azote_S0001',
-#              '/Home/LF276573/Zone_Travail/Python/CHERAB/videos/west/61537 apres xpr filtre azote_S0001/61537 apres xpr filtre azote_S0001']
-#             #  '/Home/LF276573/Zone_Travail/Python/CHERAB/videos/west/60637 ohmic apres xpr sans filtre_S0001/60637 ohmic apres xpr sans filtre_S0001',
-#             #  '/Home/LF276573/Zone_Travail/Python/CHERAB/videos/west/60637 ohmic avant xpr sans filtre_S0001/60637 ohmic avant xpr sans filtre_S0001']
 
 param_fit = None# 
 Verbose = False #if set to True, will plot additionnal figures along the raytracing process to vizualize if the process runs well
@@ -87,13 +83,13 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 
 # parameter for the number of the shot
 
-nshot =61357
+nshot =None
 path_vid = '/Home/LF276573/Zone_Travail/Python/CHERAB/videos/west/61357 avant XPR _S0001/61357 avant XPR _S0001'
  
 
 
 #####
-ParamsMachine = result_inversion.ParamsMachine(machine  = 'WEST',
+ParamsMachine = result_inversion.ParamsMachine(machine  = 'COMPASS',
                                                     path_calibration = path_calibration,
                                                     path_wall = path_wall,
                                                     path_CAD = path_CAD,
@@ -107,17 +103,23 @@ ParamsMachine = result_inversion.ParamsMachine(machine  = 'WEST',
 ParamsGrid= result_inversion.ParamsGrid(dr_grid = dr_grid,
                                                     dz_grid = dz_grid,
                                                     symetry =  symetry,
-                                                    crop_center = crop_center,
+                                                    variant_mag = variant_mag,
+                                                    revision = revision,
+                                                    phi_grid = phi_grid,
+                                                    grid_precision_multiplier =grid_precision_multiplier,
+                                                    n_polar = n_polar,
+                                                    extra_steps = extra_steps,
                                                     class_name = 'ParamsGrid')
 
 
 ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
                                                     nshot = nshot,
                                                     path_vid = path_vid,
-                                                    dict_denoising = dict_denoising,
+                                                    dict_vid = dict_vid,
                                                     time_input =time_input,
                                                     frame_input = frame_input,
                                                     inversion_parameter = inversion_parameter,
+                                                    c = c, 
                                                     class_name = 'ParamsVid')
 
 
