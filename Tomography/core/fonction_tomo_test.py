@@ -2468,3 +2468,29 @@ def read_CAD_from_components(ParamsMachine, world):
 
     CAD.unload()
     return full_wall
+
+
+
+
+def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
+    from scipy.io import loadmat
+    LOS = loadmat('/Home/NF216031/MATLAB_NF/WEST_functions/DVIS/LOS_position_name.mat', struct_as_record=False, squeeze_me=True)
+    LOS =utility_functions.matstruct_to_dict(LOS['dat'])
+
+    ind_LODIV = [i for i, x in enumerate(LOS.name) if 'LODIV' in x]
+    name = LOS.name[ind_LODIV]
+    R1 = LOS.R1[ind_LODIV]
+    Z1 = LOS.Z1[ind_LODIV]
+    PHI1 = LOS.PHI1[ind_LODIV]
+    R2 = LOS.R2[ind_LODIV]
+    Z2 = LOS.Z2[ind_LODIV]
+    PHI2 = LOS.PHI2[ind_LODIV]
+    x = R2*np.cos(PHI2)-R1*np.cos(PHI1)
+    y = R2*np.sin(PHI2)-R1*np.sin(PHI1)
+    z = Z2-Z1
+    
+    LOS = 
+    
+    
+    world = World()
+    full_wall = read_CAD_from_components(ParamsMachine, world)
