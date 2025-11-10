@@ -57,13 +57,13 @@ class Params:
 
     def to_filename(self, prefix="", ext="", sep="_", exclude=("root_folder", "class_name"), full = True):
         parts = []
-        for k, v in asdict(self).items():
+        for k, v in sorted(asdict(self).items(), key=lambda kv: kv[0]):
             if k not in exclude:
                 formatted = self.format_value(k, v, full)
                 if formatted:
                     parts.append(formatted)
 
-        return sep.join([prefix] + parts) + f"{ext}"
+        return sep.join(filter(None, [prefix] + parts)) + f"{ext}"
 
 
 @dataclass
@@ -82,7 +82,7 @@ class ParamsVid(Params):
         if exclude is None:
             exclude = ("root_folder", "class_name")
             # 👆 add subclass-specific exclusions
-        return super().to_filename(prefix, ext, sep, exclude)
+        return super().to_filename(prefix, ext, sep, exclude, full= False)
 @dataclass
 class ParamsGrid(Params):
     nshot : int = None
@@ -111,7 +111,7 @@ class ParamsGrid(Params):
         if exclude is None:
             exclude = ("root_folder", "class_name")
             # 👆 add subclass-specific exclusions
-        return super().to_filename(prefix, ext, sep, exclude)
+        return super().to_filename(prefix, ext, sep, exclude, full = False)
 
 
 @dataclass
@@ -141,7 +141,7 @@ class ParamsMachine(Params):
             raise(ValueError('Unrecognized machine, type either compass or west'))
     def to_filename(self, prefix="", ext="", sep="_", exclude=None, full = False):
         if exclude is None:
-            exclude = ("root_folder", "class_name", "machine", "path_calibration", "path_CAD" ,"variant_CAD")
+            exclude = ("root_folder", "class_name", "machine", "path_calibration", "path_CAD", "variant_CAD")
             # 👆 add subclass-specific exclusions
 
         return f"machine_{self.machine}/path_calibration_{get_name(self.path_calibration)}/path_CAD_{get_name(self.path_CAD)}_variant_CAD{self.variant_CAD}/" + super().to_filename(prefix, ext, sep, exclude, full)
@@ -248,7 +248,7 @@ class TomographyResults:
             parent.attrs[key] = value
 
         elif value is None:
-            return
+            parent.attrs[key] = '__None__'
 
         else:
             parent.attrs[key] = str(value)
@@ -258,7 +258,6 @@ class TomographyResults:
         filename = filename if filename.endswith(".h5") else filename + ".h5"
         if not os.path.isfile(filename):
             raise FileNotFoundError(f"{filename} does not exist.")
-
         def _load_value(item):
             """Helper: load datasets, dicts, dataclasses, sparse, etc."""
             if isinstance(item, h5py.Dataset):
@@ -280,7 +279,7 @@ class TomographyResults:
                         d[subkey] = _load_value(subitem)
                     for subkey, val in item.attrs.items():
                         if subkey != "_type":
-                            d[subkey] = val
+                            d[subkey] = None if val == "__None__" else val
                     return d
 
                 # Dataclass
@@ -300,7 +299,7 @@ class TomographyResults:
                         values[subkey] = _load_value(subitem)
                     for subkey, val in item.attrs.items():
                         if subkey not in ["_class", "_module"]:
-                            values[subkey] = val
+                            values[subkey] = None if val == "__None__" else val
 
                     return cls_type(**values) if cls_type else values
 
@@ -309,11 +308,12 @@ class TomographyResults:
                 for subkey, subitem in item.items():
                     d[subkey] = _load_value(subitem)
                 for subkey, val in item.attrs.items():
-                    d[subkey] = val
+                    d[subkey] = None if val == "__None__" else val
                 return d
 
             else:
                 return item
+
 
         data_dict = {}
         with h5py.File(filename, "r") as f:

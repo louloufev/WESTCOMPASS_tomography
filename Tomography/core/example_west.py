@@ -19,16 +19,16 @@ from Tomography.core.fonction_tomo_test import full_inversion_toroidal
 ###### path parameters to look for calibrations, 3D models, etc..
 
 # mask for the camera
-path_mask =  '/Home/LF276573/Zone_Travail/Python/CHERAB/masks/west/60990/custom_frame_421_1.npy'
+# path_mask =  '/Home/LF285735/Zone_Travail/Python/CHERAB/masks/west/60990/custom_frame_421_1.npy'
 
-# path_mask = None
+path_mask = None
 
 # if the directory name has already been set in Tomography/ressources/folder_paths.yaml, you only need to put the name of the file, instead of the whole path
-path_calibration ='/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/camera calibrations/west/treated_calibrations/calibration_60851_retry.npz'
+path_calibration = '/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibration/camera calibrations/west/calibration_west_4_with_mask.ccc'
 # path for the limits of the vessel/ 3D model of the vessel. 
 # path_wall = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/COMPASS_RZ_vessel.mat'
-path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
-path_CAD ='/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/20250429 full model.ccm'
+path_wall = '/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
+path_CAD ='/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/20250429 full model.ccm'
 ######
 ###### raytracing parameters : parameters for the calculation of the geometry matrix
 machine = 'WEST'
@@ -36,8 +36,8 @@ symetry = 'toroidal' #hypothesis on the emissivity uniformity. Can be set to 'to
 # parameters for dimension of the 2D plane
 phi_grid = None #toroidal angle (in degrees)
 n_polar = None # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
-dr_grid = 40e-3 #radius step of 2D grid
-dz_grid = 40e-3 #height step of 2D grid
+dr_grid = 20e-3 #radius step of 2D grid
+dz_grid = 20e-3 #height step of 2D grid
 extra_steps = None
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
 grid_precision_multiplier = None
@@ -54,13 +54,13 @@ c = 3
 
 ###### inversion parameters : if a geometry matrix has already been measured with the previous parameters, will skip the raytracing and go straight into the inversion
 
-inversion_method = 'SparseBob' # see inversion_and_thresolding function in inversion_module module for list of choices 
-inversion_parameter = {'min_visibility_node': 1}
+inversion_method = 'OPENSART' # see inversion_and_thresolding function in inversion_module module for list of choices 
+inversion_parameter = {}
 # inversion_parameter = {}
 
     # min_visibility_node : 
 
-decimation = 8# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
+decimation = 4# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
     # decimation = 1 : takes all pixels
     # decimation = 2 : takes the mean value of 2*2 pixel block, effectively dividing by 4 the number of pixels
 
@@ -82,14 +82,14 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 
 
 # parameter for the number of the shot
-
+nshot_grid =61357
 nshot =None
-path_vid = '/Home/LF276573/Zone_Travail/Python/CHERAB/videos/west/61357 avant XPR _S0001/61357 avant XPR _S0001'
+path_vid = '/Home/LF285735/Zone_Travail/Python/CHERAB/videos/west/61357 avant XPR _S0001/61357 avant XPR _S0001'
  
 
 
 #####
-ParamsMachine = result_inversion.ParamsMachine(machine  = 'COMPASS',
+ParamsMachine = result_inversion.ParamsMachine(machine  = machine,
                                                     path_calibration = path_calibration,
                                                     path_wall = path_wall,
                                                     path_CAD = path_CAD,
@@ -108,7 +108,9 @@ ParamsGrid= result_inversion.ParamsGrid(dr_grid = dr_grid,
                                                     phi_grid = phi_grid,
                                                     grid_precision_multiplier =grid_precision_multiplier,
                                                     n_polar = n_polar,
+                                                    crop_center = True,
                                                     extra_steps = extra_steps,
+                                                    nshot = nshot_grid,
                                                     class_name = 'ParamsGrid')
 
 
@@ -123,4 +125,34 @@ ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
                                                     class_name = 'ParamsVid')
 
 
-Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid)  
+Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
+import traceback
+i = 0
+try:
+    ParamsMachine.decimation = 1
+    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
+except Exception as e:
+    print("An error occurred:")
+    traceback.print_exc()
+    print(f'failed{i}') 
+i = i+1
+try:
+    ParamsMachine.decimation = 2
+    ParamsGrid.dr_grid = 10e-3
+    ParamsGrid.dz_grid = 10e-3
+    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
+except Exception as e:
+    print("An error occurred:")
+    traceback.print_exc()
+    print(f'failed{i}') 
+i = i+1
+try:
+    ParamsMachine.decimation = 1
+    ParamsGrid.crop_center = True
+    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
+except Exception as e:
+    print("An error occurred:")
+    traceback.print_exc()
+
+    print(f'failed{i}') 
+i = i+1

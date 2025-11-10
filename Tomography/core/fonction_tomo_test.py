@@ -187,12 +187,12 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     world = World()
     real_pipeline = RayTransferPipeline2D()
 
-
+    print('loading camera')
     realcam = load_camera(ParamsMachine.path_calibration)
     # if ParamsMachine.machine == 'WEST':
     #     check_shot_and_video(ParamsVid.nshot, path_vid)
     mask_pixel, name_mask = load_mask(ParamsMachine.path_calibration, ParamsMachine.path_mask)
-
+    print('camera loaded')
     #load image data
     ##### handle the cases for treating simple images
     # [name_vid, ext] = os.path.splitext(path_vid)
@@ -230,15 +230,11 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
             RZwall = RZwall[:-1]
             print('erased last element of wall')
         #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
-        R_mid = (np.max(RZwall[:, 0])+np.min(RZwall[:, 0]))/2
-        Z_mid = (np.max(RZwall[:, 1])+np.min(RZwall[:, 1]))/2
-        theta1 = np.arctan2(RZwall[0, 1]-Z_mid, RZwall[0, 0]-R_mid)
-        theta2 = np.arctan2(RZwall[1, 1]-Z_mid, RZwall[1, 0]-R_mid)
-        print(RZwall[:5])
-        # if theta2-theta1<0:
-        #     RZwall = RZwall[::-1]
-        #     print('wall reversed')
-        print(RZwall[:5])
+        Trigo_orientation, signed_area = utility_functions.polygon_orientation(RZwall[:, 0], RZwall[:, 1])
+        if Trigo_orientation:
+            RZwall = RZwall[::-1]
+            print('wall reversed')
+
         R_wall = RZwall[:, 0]
         Z_wall = RZwall[:, 1]
     else:
@@ -260,39 +256,34 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     #     tinv = 0
     ####
     # else: #load videos
+    print('loading videos')
     vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = utility_functions.get_vid(ParamsVid)
     Inversion_results = result_inversion.Inversion_results({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid, ParamsVid=ParamsVid)
     Inversion_results.t_inv = t_inv
+    print('video loaded')
     #load mask, check size
-    utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid.png')
-    utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam.gif', num_frames=100, cmap='gray')
+    # utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid.png')
+    # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam.gif', num_frames=100, cmap='gray')
     mask_pixel = mask_pixel.T
     mask_pixel = np.ascontiguousarray(mask_pixel)
     vid = np.swapaxes(vid, 1,2)
-    utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
+    # utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
 
     if ParamsMachine.machine == 'WEST':
-        mask_pixel = mask_pixel.T
-        # vid = np.swapaxes(vid, 1,2)
+        
+        vid = np.swapaxes(vid, 1,2)
         # if image_dim_y == mask_pixel.shape[0] and ParamsMachine.param_fit==None:
         #     vid = np.swapaxes(vid, 1,2)
-    utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
+    # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
+    
     realcam, mask_pixel, vid = fit_size_all(realcam, mask_pixel, vid, ParamsMachine.param_fit)
-    utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rezizing.gif', num_frames=100, cmap='viridis')
+    # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rezizing.gif', num_frames=100, cmap='viridis')
 
 
     if ParamsMachine.decimation != 1:
         realcam, mask_pixel, vid = reduce_camera_precision(realcam, mask_pixel, vid, decimation = ParamsMachine.decimation)
-        utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_decimation.gif', num_frames=100, cmap='viridis')
+        # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_decimation.gif', num_frames=100, cmap='viridis')
 
-    # corner_min_y, corner_max_y,corner_min_x, corner_max_x = FULL_MASK(mask,realcam.pixel_origins.shape[0],realcam.pixel_origins.shape[1],0,path_mask)
-    """
-    if image_dim_y!= realcam.pixel_origins.shape[0]:
-        realcam = VectorCamera( realcam.pixel_origins[corner_min_y:corner_max_y,corner_min_x: corner_max_x] ,
-                realcam.pixel_directions[corner_min_y:corner_max_y,corner_min_x: corner_max_x])
-                """
-#    realcam = VectorCamera( realcam.pixel_origins[corner_min_y:corner_max_y,corner_min_x: corner_max_x],realcam.pixel_directions[corner_min_y:corner_max_y,corner_min_x: corner_max_x])
-#    vid = vid[0, corner_min_y:corner_max_y,corner_min_x: corner_max_x]
     realcam.frame_sampler=FullFrameSampler2D(mask_pixel)
     realcam.pipelines=[real_pipeline]
     realcam.parent=world
@@ -327,6 +318,7 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
         Transfert_Matrix = result_inversion.Transfert_Matrix({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid)
         Transfert_Matrix.mask_pixel = mask_pixel
         Transfert_Matrix = get_transfert_matrix(Transfert_Matrix, realcam,  world, ParamsMachine, ParamsGrid, ParamsVid, Inversion_results, RZwall)
+        print('transfert matrix calculated')
     end_time_get_parameters = time.time()-start_time_get_parameters
 
     start_time_get_equilibrium = time.time()
@@ -463,7 +455,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     extent_RZ =[R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud] 
     nb_noeuds_r = int((R_max_noeud-R_min_noeud)/ParamsGrid.dr_grid)
     nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/ParamsGrid.dz_grid)
-    cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, ParamsGrid.crop_center)
+    cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, ParamsGrid.crop_center, ParamsGrid)
     # The RayTransferCylinder object is fully 3D, but for simplicity we're only
     # working in 2D as this case is axisymmetric. It is easy enough to pass 3D
     # views of our 2D data into the RayTransferCylinder object: we just ues a
@@ -493,7 +485,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
         print(f"Magnetic field lines calculation : {elapsed:.3f} seconds")
 
         
-        cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r*ParamsGrid.grid_precision_multiplier, nb_noeuds_z*ParamsGrid.grid_precision_multiplier, wall_limit, ParamsGrid.crop_center)
+        cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r*ParamsGrid.grid_precision_multiplier, nb_noeuds_z*ParamsGrid.grid_precision_multiplier, wall_limit, ParamsGrid.crop_center, ParamsGrid)
         grid_mask_precision = grid_mask_precision[:, np.newaxis, :]
         grid_mask_precision = np.tile(grid_mask_precision, (1, n_polar, 1))
         phi_tour = np.linspace(0, 360, n_polar, endpoint = False)
@@ -516,7 +508,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
         # pdb.set_trace()
         # voxel_map = create_voxel_map_from_equilibrium(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit, dict_transfert_matrix)
         voxel_map = create_voxel_map_from_equilibrium_query(FL_MATRIX, plasma, cell_r_precision, cell_z_precision, grid_mask_precision, cell_dr_precision, cell_dz_precision, phi_mem, dPhirad, wall_limit)
-
+    
         plasma2 = RayTransferCylinder(
             radius_outer=R_max_noeud,
             radius_inner=R_min_noeud,
@@ -600,7 +592,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
 
     mask_noeud[rows_noeud,indphi, cols_noeud] = True
-    print('shape voxel_map ', plasma.voxel_map.shape)
+    print('shape voxel_map ', plasma2.voxel_map.shape)
     print('shape mask_noeud ', mask_noeud.shape)
 
     transfert_matrix = flattened_matr[pixels,:][:, noeuds]
@@ -616,9 +608,9 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     noeuds = np.squeeze(noeuds)
 
     print('shape reduced transfert matrix = ' + str(transfert_matrix.shape))
-    plt.figure()
-    plt.imshow(np.squeeze(mask_noeud).T, extent= extent_RZ, origin = 'lower' )
-    plt.savefig(main_folder_image + '2D_map_nodes.png')
+    # plt.figure()
+    # plt.imshow(np.squeeze(mask_noeud).T, extent= extent_RZ, origin = 'lower' )
+    # plt.savefig(main_folder_image + '2D_map_nodes.png')
     # if verbose:
     #     plt.show(block = False)
     Transfert_Matrix.transfert_matrix = transfert_matrix
@@ -1684,15 +1676,16 @@ def convert_npz_to_mat(file_path = None):
     savemat(file_name + '.mat', {'transfert_matrix' : data})
 
 
-def remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z):
-    nshot = 61357
-    idx = 100
+def remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z, ParamsGrid):
+    nshot = ParamsGrid.nshot
+    
 
     try:
         magflux = call_module_function_in_environment('west_functions','get_equilibrium', 'python-3.11', nshot)
 
         r = magflux.interp2D.r
         z = magflux.interp2D.z
+        idx = magflux.interp2D.psi.shape[0]//2
         psi = magflux.interp2D.psi[idx, ...]
 
         #get psi norm
@@ -2117,7 +2110,7 @@ def plot_compare_3D_lines(R1, PHI1, Z1, R2, PHI2, Z2, label1 = 'Line 1 in Cylind
 
 
 
-def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, crop_center):
+def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, crop_center, ParamsGrid):
 
     cell_r, cell_dr = np.linspace(R_min_noeud, R_max_noeud, nb_noeuds_r, retstep=True, endpoint = False)
     cell_z, cell_dz = np.linspace(Z_min_noeud, Z_max_noeud, nb_noeuds_z, retstep=True, endpoint = False)
@@ -2143,7 +2136,7 @@ def get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_no
 
     #remove points for psi_norm<0.9
     if crop_center:
-        vertex_mask = remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z)
+        vertex_mask = remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z, ParamsGrid)
 
     # Cell is included if at least one vertex is within the wall
     grid_mask = (vertex_mask[1:, :-1] + vertex_mask[:-1, :-1]
@@ -2489,8 +2482,9 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     y = R2*np.sin(PHI2)-R1*np.sin(PHI1)
     z = Z2-Z1
     
-    LOS = 
+    LOS =LOS
     
     
     world = World()
     full_wall = read_CAD_from_components(ParamsMachine, world)
+    return R1, R2, Z1, Z2

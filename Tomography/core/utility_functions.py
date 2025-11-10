@@ -1092,3 +1092,39 @@ def matstruct_to_dict(matobj):
         return {name: matstruct_to_dict(matobj[name]) for name in matobj.dtype.names}
     else:
         return matobj
+
+
+
+def polygon_orientation(x, y):
+    """
+    Determine if a set of 2D coordinates forms a polygon
+    in trigonometric (counter-clockwise) or anti-trigonometric (clockwise) order.
+
+    Parameters
+    ----------
+    x : array-like
+        X coordinates of the closed polygon (first and last point may be the same or not).
+    y : array-like
+        Y coordinates of the closed polygon.
+
+    Returns
+    -------
+    Trigonometric_orientation : str
+        True for counter-clockwise (trigonometric),
+        False for clockwise (anti-trigonometric).
+    signed_area : float
+        Signed area (positive for CCW, negative for CW).
+    """
+    x = np.asarray(x)
+    y = np.asarray(y)
+    
+    # Ensure closed polygon (wrap around)
+    if x[0] != x[-1] or y[0] != y[-1]:
+        x = np.append(x, x[0])
+        y = np.append(y, y[0])
+    
+    # Shoelace formula for signed area
+    signed_area = 0.5 * np.sum(x[:-1] * y[1:] - x[1:] * y[:-1])
+    
+    Trigonometric_orientation = True if signed_area > 0 else False
+    return Trigonometric_orientation, signed_area
