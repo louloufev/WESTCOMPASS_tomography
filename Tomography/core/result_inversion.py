@@ -423,9 +423,8 @@ class Inversion_results(TomographyResults):
 
     def prep_inversion(self):
 
-        if self.ParamsVid.inversion_parameter:
-            self.transfert_matrix, self.pixels, self.noeuds, self.mask_pixel, self.mask_noeud = inversion_module.prep_inversion(self.Transfert_Matrix.transfert_matrix, self.Transfert_Matrix.mask_pixel, self.Transfert_Matrix.mask_noeud, self.Transfert_Matrix.pixels, self.Transfert_Matrix.noeuds, self.ParamsVid.inversion_parameter, self.Transfert_Matrix.R_noeud, self.Transfert_Matrix.Z_noeud)
-            print(f"successfully prepared transfert matrix, appling inversion parameter {self.ParamsVid.inversion_parameter}")
+        self.transfert_matrix, self.pixels, self.noeuds, self.mask_pixel, self.mask_noeud = inversion_module.prep_inversion(self.Transfert_Matrix.transfert_matrix, self.Transfert_Matrix.mask_pixel, self.Transfert_Matrix.mask_noeud, self.Transfert_Matrix.pixels, self.Transfert_Matrix.noeuds, self.ParamsVid.inversion_parameter, self.Transfert_Matrix.R_noeud, self.Transfert_Matrix.Z_noeud)
+        print(f"successfully prepared transfert matrix, appling inversion parameter {self.ParamsVid.inversion_parameter}")
 
         self.inversion_parameter = self.ParamsVid.inversion_parameter
         self._prep_inversion = True
@@ -590,14 +589,13 @@ class Inversion_results(TomographyResults):
         plt.show(block = False)
     def create_video(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
         filename = filename or self.filename + 'vid.mp4'
-        pdb.set_trace()
         if array is None:
             try:
                 array =  self.inversion_results_full_thresholded
                 print('loaded thresolded inversion')
             except:
                 array = self.inversion_results_full
-                print('loaded thresolded inversion')
+                print('loaded full inversion')
                     
         if orientation == "default python":
             array = np.swapaxes(array, 1,2)
@@ -613,7 +611,7 @@ class Inversion_results(TomographyResults):
                 print('loaded thresolded inversion')
             except:
                 array = self.inversion_results_full
-                print('loaded thresolded inversion')
+                print('loaded full inversion')
         array[array>0] = 0
         array = np.abs(array)
         if std_deviation_range is not None:
@@ -632,7 +630,7 @@ class Inversion_results(TomographyResults):
                 print('loaded thresolded inversion')
             except:
                 array = self.inversion_results_full
-                print('loaded thresolded inversion')
+                print('loaded full inversion')
         array[array<0] = 0
         if std_deviation_range is not None:
             Mean = np.mean(array[array!= 0])
