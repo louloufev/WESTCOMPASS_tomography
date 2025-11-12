@@ -878,8 +878,7 @@ def array3d_to_video(arr: np.ndarray,
         # imageio's ffmpeg writer accepts 'quality' param in some versions; we pass it regardless.
         try:
             # new imageio v3 uses imageio.v3.get_writer
-            pdb.set_trace()
-            writer = iio.get_writer(out_path, format='FFMPEG', mode='I', fps=fps, codec='libx264',macro_block_size = None)
+            writer = iio.get_writer(out_path, format='FFMPEG', mode='I', fps=fps, codec='mpeg4',macro_block_size = None)
             for frame in frames_u8:
                 writer.append_data(frame)
             writer.close()

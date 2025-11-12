@@ -3,7 +3,7 @@ from scipy.io import loadmat, savemat
 from scipy.sparse import csr_matrix, save_npz, csc_matrix, load_npz, isspmatrix
 from matplotlib import pyplot as plt
 from raysect.primitive import import_stl, import_obj, Box
-from raysect.optical import World, translate, rotate, ConstantSF, Point3D, rotate_z
+from raysect.optical import World, translate, rotate, ConstantSF, Point3D, rotate_z, Vector3D
 from raysect.optical.observer import PinholeCamera, FullFrameSampler2D, RGBPipeline2D, VectorCamera,  RGBAdaptiveSampler2D
 from raysect.optical.material import UniformSurfaceEmitter, InhomogeneousVolumeEmitter, UniformVolumeEmitter, AbsorbingSurface, Lambert
 from cherab.tools.primitives.axisymmetric_mesh import axisymmetric_mesh_from_polygon
@@ -1699,10 +1699,11 @@ def remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z, 
 
         psi_int = 0.9*(psisep-psi0)+psi0
     except:
-        magflux = loadmat('/Home/LF276573/Documents/MATLAB/shot 61357 sep 7_7s.mat', simplify_cells = True)
+        magflux = loadmat('/Home/LF285735/Documents/MATLAB/shot 61357 sep 7_7s.mat', simplify_cells = True)
         magflux = magflux['equi']
         r = magflux['interp2D']['r']
         z = magflux['interp2D']['z']
+        idx = magflux['interp2D']['psi'].shape[0]//2
         psi = magflux['interp2D']['psi'][idx, :, :]
         psisep = magflux['boundary']['psi'][idx]
         psi0 = np.nanmax(psi)
@@ -2478,13 +2479,118 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     R2 = LOS.R2[ind_LODIV]
     Z2 = LOS.Z2[ind_LODIV]
     PHI2 = LOS.PHI2[ind_LODIV]
-    x = R2*np.cos(PHI2)-R1*np.cos(PHI1)
-    y = R2*np.sin(PHI2)-R1*np.sin(PHI1)
+
+    X1 = R1*np.cos(PHI1)
+    Y1 = R1*np.sin(PHI1)
+    X2 = R2*np.cos(PHI2)
+    Y2 = R2*np.sin(PHI2)
+    x = X2-X1
+    y = Y2-Y1
     z = Z2-Z1
-    
+
     LOS =LOS
-    
-    
+    p = np.vstack((x, y, z)).T
+
+    # Direction vectors
+
+    # Compute magnitudes
+    mag = np.linalg.norm(p, axis=1, keepdims=True)
+
+    # Avoid divide-by-zero
+    mag[mag == 0] = np.nan
+
+    # Normalize
+    v_norm = p / mag
+    pixel_origins = np.array([Point3D(X1[i], Y1[i], Z1[i]) for i in range(X1.shape[0])])
+
+    pixel_directions = np.array([Vector3D(v_norm[v, 0], v_norm[v, 1], v_norm[v, 2]) for v in range(v_norm.shape[0])])
     world = World()
-    full_wall = read_CAD_from_components(ParamsMachine, world)
-    return R1, R2, Z1, Z2
+    # wall_CAD = read_CAD_from_components(ParamsMachine, world)
+
+    if ParamsMachine.path_wall:
+        try:
+            fwall = loadmat(ParamsMachine.path_wall)
+            RZwall = fwall['RZwall']
+
+        except:
+            RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
+        #check that the last element is the neighbor of the first one and not the same one
+        if(RZwall[0]==RZwall[-1]).all():
+            RZwall = RZwall[:-1]
+            print('erased last element of wall')
+        #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
+        Trigo_orientation, signed_area = utility_functions.polygon_orientation(RZwall[:, 0], RZwall[:, 1])
+        if Trigo_orientation:
+            RZwall = RZwall[::-1]
+            print('wall reversed')
+
+        R_wall = RZwall[:, 0]
+        Z_wall = RZwall[:, 1]
+    else:
+        RZwall = None
+
+    R_wall = RZwall[:, 0]
+    Z_wall = RZwall[:, 1]
+
+    wall_limit = axisymmetric_mesh_from_polygon(RZwall)
+
+    # R_max_noeud = pos_camera_RPHIZ[0] 
+    # R_min_noeud = pos_camera_RPHIZ[0] 
+    # Z_max_noeud = pos_camera_RPHIZ[2] 
+    # Z_min_noeud = pos_camera_RPHIZ[2] 
+    # R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min = optimize_boundary_grid(realcam, world, R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud)
+    if ParamsMachine.machine == 'WEST':
+        R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[3.129871200000000, 1.834345700000000,0.798600000000000,-0.789011660000000]
+    
+       
+    if ParamsGrid.extra_steps:
+        R_max_noeud = R_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dr_grid
+        R_min_noeud = R_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dr_grid
+        Z_max_noeud = Z_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dz_grid
+        Z_min_noeud = Z_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dz_grid
+     # if verbose:
+    #     fig = utility_functions.plot_cylindrical_coordinates(RPHIZ)
+    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,0,:], fig, color = 'blue', label = 'point [0,0]')
+    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,0,:], fig, color = 'red', label = 'point [-1,0]')
+    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,-1,:], fig, color = 'green', label = 'point [0,-1]')
+    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,-1,:], fig, color = 'yellow', label = 'point [-1,-1]')
+    #     plt.savefig(main_folder_image + 'images line of sight and wall')
+    extent_RZ =[R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud] 
+    nb_noeuds_r = int((R_max_noeud-R_min_noeud)/ParamsGrid.dr_grid)
+    nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/ParamsGrid.dz_grid)
+    cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, ParamsGrid.crop_center, ParamsGrid)
+    # The RayTransferCylinder object is fully 3D, but for simplicity we're only
+    # working in 2D as this case is axisymmetric. It is easy enough to pass 3D
+    # views of our 2D data into the RayTransferCylinder object: we just ues a
+    # numpy.newaxis (or equivalently, None) for the toroidal dimension.
+    grid_mask = grid_mask[:, np.newaxis, :]
+    
+    n_polar = 1
+    RZ_mask_grid = np.copy(grid_mask)
+    grid_mask = np.tile(grid_mask, (1, n_polar, 1))
+    num_points_rz = nb_noeuds_r*nb_noeuds_z
+    plasma2 = RayTransferCylinder(radius_outer=cell_r[-1],
+                                        radius_inner=cell_r[0],
+                                        height=cell_z[-1] - cell_z[0],
+                                        n_radius=nb_noeuds_r, n_height=nb_noeuds_z, 
+                                        mask=grid_mask, n_polar=n_polar, 
+                                        parent = world, transform=translate(0, 0, cell_z[0]))
+ 
+    real_pipeline = RayTransferPipeline2D()
+    
+    camera = VectorCamera(pixel_origins[np.newaxis, :], pixel_directions[np.newaxis, :], parent = world)
+
+    # TRANSFORM = translate()
+
+    camera.frame_sampler=FullFrameSampler2D()
+    camera.pipelines=[real_pipeline]
+    camera.pixel_samples = 100
+    camera.min_wavelength = 640
+    camera.max_wavelength = camera.min_wavelength +1
+    camera.render_engine.processes = 16
+    camera.spectral_bins = plasma2.bins
+    camera.observe()
+    tf = np.squeeze(camera.pipelines[0].matrix)
+
+
+    return R1, R2, Z1, Z2, tf, grid_mask, extent_RZ, R_wall, Z_wall
