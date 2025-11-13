@@ -85,7 +85,6 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 nshot_grid =61357
 nshot =None
 path_vid = '/Home/LF285735/Zone_Travail/Python/CHERAB/videos/west/61357 avant XPR _S0001/61357 avant XPR _S0001'
- 
 
 
 #####
