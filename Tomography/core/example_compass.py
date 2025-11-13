@@ -38,12 +38,12 @@ phi_grid = 'auto' #toroidal angle (in degrees)
 n_polar = 1800 # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
 dr_grid = 2e-3 #radius step of 2D grid
 dz_grid = 2e-3 #height step of 2D grid
-extra_steps = 8
+extra_steps = 16
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
 grid_precision_multiplier = 4
 variant_mag='V4_std_O'
 revision = 21
-dict_vid = {'sigma' : 2, 'median' : 10}
+dict_vid = {'sigma' : 2, 'median' : 20}
 variant_CAD = '2018_11 - with midplane' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
 name_material =     'absorbing_surface'

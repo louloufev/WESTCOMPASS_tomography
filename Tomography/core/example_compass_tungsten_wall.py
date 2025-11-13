@@ -43,7 +43,7 @@ extra_steps = 8
 grid_precision_multiplier = 4
 variant_mag='V4_std_O'
 revision = 21
-dict_vid = {'sigma' : 2, 'median' : 10}
+dict_vid = {'sigma' : 2, 'median' : 20}
 variant_CAD = '2018_11 - with midplane' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
 name_material =     'Tomography/ressources/components_compass_tungsten'
@@ -55,7 +55,7 @@ c = 3
 ###### inversion parameters : if a geometry matrix has already been measured with the previous parameters, will skip the raytracing and go straight into the inversion
 
 inversion_method = 'SparseBob' # see inversion_and_thresolding function in inversion_module module for list of choices 
-inversion_parameter = {'min_visibility_node': 1}
+inversion_parameter = {}
 # inversion_parameter = {}
 
     # min_visibility_node : 
@@ -70,7 +70,7 @@ decimation = 1 # int : used to average camera data into blocks of pixels; useful
 # time_input = [1.150, 1.151]
 time_input = None # [t0, t1] in seconds
 # frame_input = None
-frame_input = [54001, 54400] # number of the frames
+frame_input = [54001, 55000] # number of the frames
             # if left at none, will treat the whole video
             # if both specified, will take time_input over frame_input
 
