@@ -36,8 +36,8 @@ symetry = 'toroidal' #hypothesis on the emissivity uniformity. Can be set to 'to
 # parameters for dimension of the 2D plane
 phi_grid = None #toroidal angle (in degrees)
 n_polar = None # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
-dr_grid = 20e-3 #radius step of 2D grid
-dz_grid = 20e-3 #height step of 2D grid
+dr_grid = 80e-3 #radius step of 2D grid
+dz_grid = 80e-3 #height step of 2D grid
 extra_steps = None
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
 grid_precision_multiplier = None
@@ -60,7 +60,7 @@ inversion_parameter = {}
 
     # min_visibility_node : 
 
-decimation = 4# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
+decimation = 16# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
     # decimation = 1 : takes all pixels
     # decimation = 2 : takes the mean value of 2*2 pixel block, effectively dividing by 4 the number of pixels
 
@@ -108,7 +108,7 @@ ParamsGrid= result_inversion.ParamsGrid(dr_grid = dr_grid,
                                                     phi_grid = phi_grid,
                                                     grid_precision_multiplier =grid_precision_multiplier,
                                                     n_polar = n_polar,
-                                                    crop_center = True,
+                                                    crop_center = False,
                                                     extra_steps = extra_steps,
                                                     nshot = nshot_grid,
                                                     class_name = 'ParamsGrid')
@@ -126,33 +126,33 @@ ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
 
 
 Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-import traceback
-i = 0
-try:
-    ParamsMachine.decimation = 1
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.decimation = 2
-    ParamsGrid.dr_grid = 10e-3
-    ParamsGrid.dz_grid = 10e-3
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.decimation = 1
-    ParamsGrid.crop_center = True
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
+# import traceback
+# i = 0
+# try:
+#     ParamsMachine.decimation = 1
+#     Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
+# except Exception as e:
+#     print("An error occurred:")
+#     traceback.print_exc()
+#     print(f'failed{i}') 
+# i = i+1
+# try:
+#     ParamsMachine.decimation = 2
+#     ParamsGrid.dr_grid = 10e-3
+#     ParamsGrid.dz_grid = 10e-3
+#     Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
+# except Exception as e:
+#     print("An error occurred:")
+#     traceback.print_exc()
+#     print(f'failed{i}') 
+# i = i+1
+# try:
+#     ParamsMachine.decimation = 1
+#     ParamsGrid.crop_center = True
+#     Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
+# except Exception as e:
+#     print("An error occurred:")
+#     traceback.print_exc()
 
-    print(f'failed{i}') 
-i = i+1
+#     print(f'failed{i}') 
+# i = i+1

@@ -468,7 +468,6 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     RZ_mask_grid = np.copy(grid_mask)
     grid_mask = np.tile(grid_mask, (1, n_polar, 1))
     num_points_rz = nb_noeuds_r*nb_noeuds_z
-
     # R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_min, phi_max = optimize_grid(R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, realcam, phi_grid, RZwall)
     
     #recalculate the extremities of the grid; the grid starts at (r_min, z_min) and its last point is (r_max-dr_grid, z_max-dz_grid)
@@ -583,15 +582,18 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     mask_pixel = np.zeros(flattened_matr.shape[0], dtype = bool)
     mask_pixel[pixels] = True
     mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
+
     # x, y, z = np.where(RZ_mask_grid)
     # x = x[noeuds]
     # y = y[noeuds]
-    # z = z[noeuds]
-    
+    # # z = z[noeuds]
+    true_nodes = np.flatnonzero(RZ_mask_grid)
     mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
-    rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
-
-    mask_noeud[rows_noeud,indphi, cols_noeud] = True
+    mask_noeud.ravel()[true_nodes[noeuds]] = True
+    # mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
+    # rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
+    pdb.set_trace()
+    # mask_noeud[rows_noeud,indphi, cols_noeud] = True
     print('shape voxel_map ', plasma2.voxel_map.shape)
     print('shape mask_noeud ', mask_noeud.shape)
 
@@ -1876,7 +1878,6 @@ def read_CAD_from_calcam_module(path_CAD, world, name_material, wall_material, v
     path_stl = [CAD.features[feature].filename for feature in enabled_features] 
 
     wall_materials = read_material(path_stl, name_material, wall_material)
-
     full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = wall_materials[i], name = features[i]) for i, f in enumerate(path_stl)]
     CAD.unload()
     return full_wall, name_material
@@ -2450,16 +2451,15 @@ def read_CAD_from_components(ParamsMachine, world):
     print(features)
 
     CAD.enable_only(enabled_features)
-
+    
     path_stl = [CAD.features[feature].filename for feature in enabled_features] 
-
+    
     if ParamsMachine.name_material == "absorbing_surface":
 
         full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = AbsorbingSurface(), name = features[i]) for i, f in enumerate(path_stl)]
     else:
         wall_materials = load_components(ParamsMachine.name_material, enabled_features)
         full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = wall_materials[i], name = features[i]) for i, f in enumerate(path_stl)]
-
     CAD.unload()
     return full_wall
 
