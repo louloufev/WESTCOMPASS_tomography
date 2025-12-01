@@ -41,3 +41,6 @@
 09_03_ripples_vert: 'CuCrZr'
 'Limiters' : 'W'
 'Vessel_midplane' : 'W'
+'Compass VV for camera calibration 1' : 'W'
+'Compass VV for camera calibration 2' : 'W'
+'section tokamak' : 'W'

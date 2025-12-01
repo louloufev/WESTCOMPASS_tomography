@@ -20,31 +20,36 @@ from Tomography.core.fonction_tomo_test import full_inversion_toroidal
 
 # mask for the camera
 path_mask =  '/compass/Shared/Common/COMPASS/Diagnostics/Cameras/Models/15487_mask_20190712.mat'
-# path_mask = None
+# path_mask = None if left to none will try to see if the calcam calibration has one. 
 
 # if the directory name has already been set in Tomography/ressources/folder_paths.yaml, you only need to put the name of the file, instead of the whole path
 path_calibration ='/compass/Shared/Common/COMPASS/Diagnostics/Cameras/Calibrations/Calcam calibration/15487-15482/From Alexandra/2022_10_05 - 15487 recalibration_C.ccc'
 
 # path for the limits of the vessel/ 3D model of the vessel. 
-# path_wall = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/COMPASS_RZ_vessel.mat'
-path_wall = None
+path_wall = None #path for limits of the wall in the 2D poloidal plane. Not necessary for compass as it can load from pleque 
+
 path_CAD ='/compass/Shared/Common/COMPASS/Diagnostics/Cameras/Models/compass 20879 view camera.ccm'
+variant_CAD = '2018_11 - with midplane' # parameters for the variant of the 3D model
+
 ######
 ###### raytracing parameters : parameters for the calculation of the geometry matrix
 machine = 'COMPASS'
 symetry = 'magnetic' #hypothesis on the emissivity uniformity. Can be set to 'toroidal'
 # parameters for dimension of the 2D plane
-phi_grid = 'auto' #toroidal angle (in degrees)
+phi_grid = 'auto' #toroidal angle (in degrees). auto tries to find the angle of the plane in the middle of the field of view of the camera.
 n_polar = 1800 # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
 dr_grid = 2e-3 #radius step of 2D grid
 dz_grid = 2e-3 #height step of 2D grid
-extra_steps = 16
-# This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
-grid_precision_multiplier = 4
+extra_steps = 16 #the programm tries to optimize the size of the poloidal plane. this adds a number of points in the R and Z directions to make sure no field lines are missed.
+grid_precision_multiplier = 4 #subdivises the cell by this number into smaller cells to better match the positions of the field lines.
 variant_mag='V4_std_O'
 revision = 21
-dict_vid = {'sigma' : 2, 'median' : 20}
-variant_CAD = '2018_11 - with midplane' # parameters for the variant of the 3D model
+
+dict_vid = {'sigma' : 2, 'median' : 20} 
+# this dictionnary holds parameter for video treatent :
+#       sigma : sigma parameter of the gaussian filter
+#       median : number of frames of the median filter
+
 # parameters to specify the model for the reflection of the walls
 name_material =     'absorbing_surface'
 c = 3
@@ -75,7 +80,8 @@ frame_input = [54001, 54400] # number of the frames
             # if both specified, will take time_input over frame_input
 
 
-param_fit = 'vid'# 
+param_fit = 'vid'# calibration, mask and videos may not have the same size. Choose the one that should be the final size.
+#crops or extends with 0 (keep the same center) the other two to fit the same size. Leave to None if all have the same size.
 Verbose = False #if set to True, will plot additionnal figures along the raytracing process to vizualize if the process runs well
 # can add a long time, best set to false once raytracing gives satisfactory results.
 

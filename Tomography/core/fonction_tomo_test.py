@@ -579,6 +579,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     pixels,  = np.where(np.sum(flattened_matr, 1)) #sum over nodes
     noeuds,  = np.where(np.sum(flattened_matr, 0)) #sum over pixels
     #save results
+
     mask_pixel = np.zeros(flattened_matr.shape[0], dtype = bool)
     mask_pixel[pixels] = True
     mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
@@ -587,16 +588,17 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     # x = x[noeuds]
     # y = y[noeuds]
     # # z = z[noeuds]
-    true_nodes = np.flatnonzero(RZ_mask_grid)
-    mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
-    mask_noeud.ravel()[true_nodes[noeuds]] = True
-    # mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
-    # rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
-    pdb.set_trace()
-    # mask_noeud[rows_noeud,indphi, cols_noeud] = True
+    if ParamsGrid.symetry == 'magnetic':
+        mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
+        rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
+        mask_noeud[rows_noeud,indphi, cols_noeud] = True
+    elif ParamsGrid.symetry == 'toroidal':
+        true_nodes = np.flatnonzero(RZ_mask_grid)
+        mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
+        mask_noeud.ravel()[true_nodes[noeuds]] = True
     print('shape voxel_map ', plasma2.voxel_map.shape)
     print('shape mask_noeud ', mask_noeud.shape)
-
+    
     transfert_matrix = flattened_matr[pixels,:][:, noeuds]
 
     nb_visible_noeuds = len(np.unique(noeuds))
@@ -992,6 +994,7 @@ def call_module2_function(func_name, *args):
     
 
 def reduce_camera_precision(camera, mask, vid, decimation =1):
+    decimation = decimation or 1
     mask = downsample_with_avg(mask, decimation)
     # mask = mask[::decimation, ::decimation]
     vid_downsize = np.zeros((vid.shape[0], mask.shape[0], mask.shape[1]))
@@ -2013,7 +2016,9 @@ def load_mask(path_calibration, path_mask):
             mask_pixel = calcam_camera.subview_mask
             mask_pixel = np.invert(mask_pixel)
             mask_pixel = np.ascontiguousarray(mask_pixel)
-            name_mask = 'calibration_calcam'        
+            name_mask = 'calibration_calcam'  
+            
+
         except:
 
             try:
@@ -2451,7 +2456,6 @@ def read_CAD_from_components(ParamsMachine, world):
     print(features)
 
     CAD.enable_only(enabled_features)
-    
     path_stl = [CAD.features[feature].filename for feature in enabled_features] 
     
     if ParamsMachine.name_material == "absorbing_surface":

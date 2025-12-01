@@ -1,10 +1,20 @@
-mamba create -n tomography_env
-conda activate tomography_env
+mamba create -n tomography_env #only once
+conda activate tomography_env #every time before launching python
 
-module load pleque
-pip install imageio imageio-ffmpeg
-pip install calcam
-pip install cherab
 
-# mamba env create -f environment/inversion_env.yaml inversion_env
+module load pleque #every time before launching python
+
+
+pip install imageio imageio-ffmpeg #only once
+pip install calcam #only once
+pip install cherab #only once
+
+#you can launch python now !
+
+# for heavy calculations, connect to calculation servers, write in terminal 
+#ssh username@gpu-titan 
+#it does not handle graphics (no plots and interactive prompting), use ltserv for easy plots
+
+
+
 

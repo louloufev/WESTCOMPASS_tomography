@@ -9,4 +9,4 @@ Tomography package with auto-import and reload (Python 3.5 compatible)
 """
 
 
-__import__('pkg_resources').declare_namespace(__name__)
+# __import__('pkg_resources').declare_namespace(__name__)
