@@ -20,7 +20,6 @@ from Tomography.core.fonction_tomo import full_inversion_toroidal
 # mask for the camera
 path_mask = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/test_mask.npy'
 
-ignore_mask_calibration = False # if False, the mask saved in the calcam calibration will be prioritized over the mask from path_mask, unless this parameter is set to true
 
 
 # paths_calibration = [path calibration 1, path calibration 2, ...] : path for calcam camera calibrations. Here it is put in an array to loop over different calibrations for testing
@@ -32,128 +31,134 @@ paths_calibration = [
     # '/compass/Shared/Common/COMPASS/Diagnostics/Cameras/Calibrations/Calcam calibration/15487-15482/From Sarah/15478_last_test_18_10_2021_115.ccc',
         ]
 
+
+
+from Tomography.core.fonction_tomo_test import full_inversion_toroidal
+
+
+
+import importlib
+import numpy as np
+import matplotlib.pyplot as plt
+import pdb
+from Tomography.core import utility_functions, result_inversion
+
+
+#for easy debugging
+import Tomography
+importlib.reload(Tomography.core.fonction_tomo_test)
+
+#import relevant function from tomography package
+from Tomography.core.fonction_tomo_test import full_inversion_toroidal
+
+###### path parameters to look for calibrations, 3D models, etc..
+
+# mask for the camera
+path_mask = None 
+# if the directory name has already been set in Tomography/ressources/folder_paths.yaml, you only need to put the name of the file, instead of the whole path
+path_calibration = '/compass/home/fevre/WESTCOMPASS_tomography/models_and_calibrations/calibrations/compass/20879_2021_03_31 - first trial.ccc'
 # path for the limits of the vessel/ 3D model of the vessel. 
-path_wall = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/COMPASS_RZ_vessel.mat'
-paths_CAD = [
-   # '/compass/home/fevre/WESTCOMPASS_tomography/models_and_calibrations/models/compass/COMPASS.ccm', 
-    '/compass/home/fevre/WESTCOMPASS_tomography/models_and_calibrations/models/compass/compass 20879 view camera.ccm', 
-]
+path_wall = None #path for limits of the wall in the 2D poloidal plane. Not necessary for compass as it can load from pleque 
+
+path_CAD ='/compass/home/fevre/WESTCOMPASS_tomography/models_and_calibrations/models/compass/compass 20879 view camera.ccm'
+variant_CAD = 'view camera' # parameters for the variant of the 3D model
+
 ######
 ###### raytracing parameters : parameters for the calculation of the geometry matrix
 machine = 'COMPASS'
 symetry = 'magnetic' #hypothesis on the emissivity uniformity. Can be set to 'toroidal'
-
 # parameters for dimension of the 2D plane
-phi_grid = 220 #toroidal angle (in degrees)
-n_polar = 360 # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
-dr_grid = 5e-3 #radius step of 2D grid
-dz_grid = 5e-3 #height step of 2D grid
-# This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
-dict_transfert_matrix = {'grid_precision_multiplier':4, 'variant':'', 'revision':-1}
+phi_grid = 'auto' #toroidal angle (in degrees). auto tries to find the angle of the plane in the middle of the field of view of the camera.
+n_polar = 1800 # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
+dr_grid = 2e-3 #radius step of 2D grid
+dz_grid = 2e-3 #height step of 2D grid
+extra_steps = 4 #the programm tries to optimize the size of the poloidal plane. this adds a number of points in the R and Z directions to make sure no field lines are missed.
+grid_precision_multiplier = 4 #subdivises the cell by this number into smaller cells to better match the positions of the field lines.
+variant_mag=None
+revision = None
 
-variant = 'view_camera' # parameters for the variant of the 3D model
+dict_vid = {'sigma' : 3, 'median' : 80} 
+# this dictionnary holds parameter for video treatent :
+#       sigma : sigma parameter of the gaussian filter
+#       median : number of frames of the median filter
+
 # parameters to specify the model for the reflection of the walls
-materials = [
-        'absorbing_surface', 
-        # 'tungsten001', 
-        # 'tungsten03',
-        # 'tungsten05',
-        # 'tungsten1',
-             ]
+name_material =     'absorbing_surface'
+c = 3
+
 
 ######
 
 ###### inversion parameters : if a geometry matrix has already been measured with the previous parameters, will skip the raytracing and go straight into the inversion
 
-inversion_method = 'lstsq' # see inversion_and_thresolding function in inversion_module module for list of choices 
-decimation = 1 # int : used to average camera data into blocks of pixels; useful for large number of pixels. 
+inversion_method = 'SparseBob' # see inversion_and_thresolding function in inversion_module module for list of choices 
+inversion_parameter = {}
+# inversion_parameter = {}
+
+    # min_visibility_node : 
+
+decimation = None # int : used to average camera data into blocks of pixels; useful for large number of pixels. 
     # decimation = 1 : takes all pixels
     # decimation = 2 : takes the mean value of 2*2 pixel block, effectively dividing by 4 the number of pixels
 
 
 
-# input for video : specify what section of the video to load.  
-time_input = None # [t0, t1] in milliseconds
-frame_input = [54001, 54400] # number of the frames
+# input for video : specify what section of the video to load. 
+# time_input = [1.150, 1.151]
+time_input = None # [t0, t1] in seconds
+# frame_input = None
+frame_input = [151200, 153200] # number of the frames
             # if left at none, will treat the whole video
             # if both specified, will take time_input over frame_input
 
-# reduce_frame = int;  if the video is too long to inverse, the programm can average over every few frames. Input here how much frames should be averaged.
-reduce_frames = [10, 100, 10, 10, 400, 400, 4] # array to loop over different inversion parameters
 
-params_fit = ['vid'] # 
-Verbose = False #if set to True, will plot additionnal plots along the raytracing process to vizualize if the process runs well
+param_fit = 'vid'# calibration, mask and videos may not have the same size. Choose the one that should be the final size.
+#crops or extends with 0 (keep the same center) the other two to fit the same size. Leave to None if all have the same size.
+Verbose = False #if set to True, will plot additionnal figures along the raytracing process to vizualize if the process runs well
 # can add a long time, best set to false once raytracing gives satisfactory results.
 
 
 
-# parameter for the number of the shot, in this example it is put in an array to loop over it
+# parameter for the number of the shot
 
-nshots = [
-    20827,
-    # 15487
-    ]
+nshot =20846
+path_vid = None
+
 
 #####
+ParamsMachine = result_inversion.ParamsMachine(machine  = 'COMPASS',
+                                                    path_calibration = path_calibration,
+                                                    path_wall = path_wall,
+                                                    path_CAD = path_CAD,
+                                                    variant_CAD = variant_CAD,
+                                                    path_mask = path_mask,
+                                                    name_material = name_material,
+                                                    param_fit = param_fit,     
+                                                    decimation = decimation,
+                                                    class_name  = 'ParamsMachine')
 
-# Since the programm does not need to repeat the raytracing if the raytracing parameters stay the same,
-# it might be useful to do 2 loops, one on the raytracing parameters, the other on the inversion parameters
+ParamsGrid= result_inversion.ParamsGrid(dr_grid = dr_grid,
+                                                    dz_grid = dz_grid,
+                                                    symetry =  symetry,
+                                                    variant_mag = variant_mag,
+                                                    revision = revision,
+                                                    phi_grid = phi_grid,
+                                                    grid_precision_multiplier =grid_precision_multiplier,
+                                                    n_polar = n_polar,
+                                                    extra_steps = extra_steps,
+                                                    class_name = 'ParamsGrid')
 
 
-for k in range(len(materials)): # loop over the raytracing parameters
-    name_material = materials[k]
-    # name_material = 'tungsten05'
-    for j in range(len(paths_calibration)):
-        path_calibration = paths_calibration[j]
-        path_CAD = paths_CAD[0]
-        nshot = nshots[i]
+ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
+                                                    nshot = nshot,
+                                                    path_vid = path_vid,
+                                                    dict_vid = dict_vid,
+                                                    time_input =time_input,
+                                                    frame_input = frame_input,
+                                                    inversion_parameter = inversion_parameter,
+                                                    c = c, 
+                                                    class_name = 'ParamsVid')
 
-        for i in range(len(params_fit)):# loop over the inversion parameters
 
-            path_vid = None
-            inversion_parameter = {}
-            param_fit = params_fit[i]
-            [transfert_matrix, 
-            vid,
-            images_retrofit_full,
-            inversion_results_full, 
-            inversion_results_thresolded_full,
-            pixels, 
-            noeuds, 
-            dr_grid, 
-            dz_grid, 
-            nb_noeuds_r, 
-            nb_noeuds_z, 
-            RZwall, 
-            R_wall, 
-            Z_wall, 
-            world, 
-            full_wall,
-            R_noeud, 
-            Z_noeud, 
-            mask_pixel,
-            mask_noeud] = full_inversion_toroidal(nshot, 
-                                                            path_calibration, 
-                                                            path_mask, 
-                                                            path_wall, 
-                                                            machine, symetry, 
-                                                            time_input = time_input, 
-                                                            frame_input = frame_input, 
-                                                            dr_grid = dr_grid, 
-                                                            dz_grid = dr_grid, 
-                                                            verbose = Verbose, 
-                                                            inversion_method = inversion_method, 
-                                                            name_material = name_material,  
-                                                            path_vid = path_vid, 
-                                                            path_CAD = path_CAD, 
-                                                            variant = variant,
-                                                            inversion_parameter = inversion_parameter, 
-                                                            phi_grid = phi_grid,
-                                                            decimation =decimation,
-                                                            ignore_mask_calibration = ignore_mask_calibration,
-                                                            param_fit = param_fit,
-                                                            real_inv_flag= 1,
-                                                            synth_inv_flag=0,
-                                                            dict_transfert_matrix=dict_transfert_matrix,
-                                                            n_polar= n_polar
-                                                            )
+Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid)  
+

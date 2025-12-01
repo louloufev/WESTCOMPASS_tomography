@@ -825,7 +825,9 @@ def array3d_to_video(arr: np.ndarray,
                      percentile_sup : Optional[float] = 100,
                      percentile_inf : Optional[float] = 0,
                      codec: str = "libx264",
-                     quality: int = 8
+                     quality: int = 8,
+                     Z : np.ndarray = None,
+                     R : np.ndarray = None
                     ) -> str:
     """
     Save a 3D numpy array to a video file without using cv2.
@@ -846,7 +848,8 @@ def array3d_to_video(arr: np.ndarray,
         Codec string passed to imageio/ffmpeg (e.g. "libx264").
     quality : int
         Quality parameter (used by imageio when available; 0-10-ish, implementation-defined).
-    
+    R, Z : array
+        Horizontal and vertical coordinates
     Returns
     -------
     str
@@ -879,10 +882,26 @@ def array3d_to_video(arr: np.ndarray,
         try:
             # new imageio v3 uses imageio.v3.get_writer
             writer = iio.get_writer(out_path, format='FFMPEG', mode='I', fps=fps, codec='libx264',macro_block_size = None)
+            
+            crop_h = H % 2          # 1 if odd
+            crop_w = W % 2
+
+            # Crop coordinate arrays to match
+            cropped_Z = Z[:-crop_h] if crop_h else Z
+            cropped_R = R[:-crop_w] if crop_w else R
+
+            
+            
             for frame in frames_u8:
+                f = frame
+                if crop_h:
+                    frame = frame[:-1, :]
+                if crop_w:
+                    frame = frame[:, :-1]
                 writer.append_data(frame)
             writer.close()
         except:
+            pdb.set_trace()
             print('failed to write video')
     except Exception:
         # If imageio not installed, try matplotlib's FFMpegWriter (requires ffmpeg in PATH)
@@ -908,7 +927,7 @@ def array3d_to_video(arr: np.ndarray,
                 "Install imageio (`pip install imageio imageio-ffmpeg`) or ensure ffmpeg is on PATH for matplotlib fallback.\n"
                 f"Original error: {e}"
             )
-        
+    return cropped_R, cropped_Z
 
 
 def prep_image(array, vmin = None, vmax = None, percentile_inf = None, percentile_sup = None):

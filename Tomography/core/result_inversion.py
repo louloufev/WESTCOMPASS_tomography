@@ -12,6 +12,8 @@ import pdb
 from dataclasses import dataclass, asdict, field, is_dataclass, fields
 import hashlib
 import matplotlib.pyplot as plt
+from scipy.io import loadmat, savemat
+
 
 from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified, inverse_vid_from_class
 def get_name(string):
@@ -587,8 +589,29 @@ class Inversion_results(TomographyResults):
         plt.colorbar()
         plt.title('Retro fit')
         plt.show(block = False)
-    def create_video(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100):
+
+    def save_mat(self, filename = None):
+        filename = self.filename or filename
+        dict_save =dict(R_noeud = self.Transfert_Matrix.R_noeud,
+                        Z_noeud = self.Transfert_Matrix.Z_noeud, 
+                        mask_pixel = self.mask_pixel, 
+                        mask_noeud= self.mask_noeud,
+                        inversion_results_full = self.inversion_results_full,
+                        inversion_results_full_thresholded = self.inversion_results_full_thresholded,
+                        vid = self.vid,
+                        images_retrofit_full = self.images_retrofit_full,
+                        c = self.ParamsVid.c,
+                        sigma = self.ParamsVid.dict_vid['sigma'],
+                        median = self.ParamsVid.dict_vid['median'])
+        savemat(filename+'mat', dict_save)
+
+
+    def create_video(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", percentile_inf = 0, percentile_sup = 100, R = None, Z = None):
         filename = filename or self.filename + 'vid.mp4'
+        if R is None:
+            R = self.Transfert_Matrix.R_noeud 
+        if Z is None:
+            Z = self.Transfert_Matrix.Z_noeud
         if array is None:
             try:
                 array =  self.inversion_results_full_thresholded
@@ -601,7 +624,9 @@ class Inversion_results(TomographyResults):
             array = np.swapaxes(array, 1,2)
         if Yaxis == "default python":
             array = np.flip(array, 1)
-        utility_functions.array3d_to_video(array, filename, fps=20, percentile_inf = percentile_inf, percentile_sup = percentile_sup)
+        R, Z = utility_functions.array3d_to_video(array, filename, fps=20, percentile_inf = percentile_inf, percentile_sup = percentile_sup, R = R, Z = Z)
+        savemat(filename + 'coordinates', {'cropped_R':R, 'cropped_Z':Z })
+
 
     def create_video_holes(self, filename = None, array = None, orientation = "default python", Yaxis = "default python", std_deviation_range = None):
         filename = filename or self.filename + 'vidholes' + 'std_deviation_range' + str(std_deviation_range) + '.mp4'
