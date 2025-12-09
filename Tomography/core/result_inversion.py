@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from scipy.io import loadmat, savemat
 
 
-from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified, inverse_vid_from_class
+from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, reconstruct_2D_image, inverse_vid_from_class
 def get_name(string):
     if string:
         return os.path.splitext(os.path.basename(string))[0]
@@ -127,8 +127,7 @@ class ParamsMachine(Params):
     path_mask : str = None
     name_material : str = 'absorbing_surface'
     param_fit : str = None,
-    decimation : int = 1
-
+    decimation : int = 1,
 
     class_name : str = 'ParamsMachine'
 
@@ -602,7 +601,8 @@ class Inversion_results(TomographyResults):
                         images_retrofit_full = self.images_retrofit_full,
                         c = self.ParamsVid.c,
                         sigma = self.ParamsVid.dict_vid['sigma'],
-                        median = self.ParamsVid.dict_vid['median'])
+                        median = self.ParamsVid.dict_vid['median'],
+                        t_inv = self.t_inv)
         savemat(filename+'mat', dict_save)
 
 

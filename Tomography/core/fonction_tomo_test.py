@@ -2,8 +2,8 @@ import numpy as np
 from scipy.io import loadmat, savemat
 from scipy.sparse import csr_matrix, save_npz, csc_matrix, load_npz, isspmatrix
 from matplotlib import pyplot as plt
-from raysect.primitive import import_stl, import_obj, Box
-from raysect.optical import World, translate, rotate, ConstantSF, Point3D, rotate_z, Vector3D
+from raysect.primitive import import_stl, import_obj, Box, import_ply
+from raysect.optical import World, Node, translate, rotate, ConstantSF, Point3D, rotate_z, Vector3D
 from raysect.optical.observer import PinholeCamera, FullFrameSampler2D, RGBPipeline2D, VectorCamera,  RGBAdaptiveSampler2D
 from raysect.optical.material import UniformSurfaceEmitter, InhomogeneousVolumeEmitter, UniformVolumeEmitter, AbsorbingSurface, Lambert
 from cherab.tools.primitives.axisymmetric_mesh import axisymmetric_mesh_from_polygon
@@ -30,7 +30,7 @@ from . import utility_functions, result_inversion
 import tkinter as tk
 from tkinter import filedialog
 
-from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, plot_results_inversion, reconstruct_2D_image, plot_results_inversion_simplified, inverse_vid_from_class
+from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, reconstruct_2D_image, inverse_vid_from_class
 from Tomography.ressources import components, paths
 
 #### yaml files
@@ -189,13 +189,9 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
 
     print('loading camera')
     realcam = load_camera(ParamsMachine.path_calibration)
-    # if ParamsMachine.machine == 'WEST':
-    #     check_shot_and_video(ParamsVid.nshot, path_vid)
     mask_pixel, name_mask = load_mask(ParamsMachine.path_calibration, ParamsMachine.path_mask)
     print('camera loaded')
-    #load image data
-    ##### handle the cases for treating simple images
-    # [name_vid, ext] = os.path.splitext(path_vid)
+    
 
 #check surface
     name_material = os.path.splitext(os.path.basename(ParamsMachine.name_material))
@@ -268,10 +264,9 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     mask_pixel = np.ascontiguousarray(mask_pixel)
     vid = np.swapaxes(vid, 1,2)
     # utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
-
     if ParamsMachine.machine == 'WEST':
-        
         vid = np.swapaxes(vid, 1,2)
+        vid = np.flip(vid, 1)
         # if image_dim_y == mask_pixel.shape[0] and ParamsMachine.param_fit==None:
         #     vid = np.swapaxes(vid, 1,2)
     # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
@@ -280,17 +275,17 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rezizing.gif', num_frames=100, cmap='viridis')
 
 
-    if ParamsMachine.decimation != 1:
+    if ParamsMachine.decimation is not None:
         realcam, mask_pixel, vid = reduce_camera_precision(realcam, mask_pixel, vid, decimation = ParamsMachine.decimation)
         # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_decimation.gif', num_frames=100, cmap='viridis')
-
+   
     realcam.frame_sampler=FullFrameSampler2D(mask_pixel)
     realcam.pipelines=[real_pipeline]
     realcam.parent=world
     realcam.pixel_samples = 100
     realcam.min_wavelength = 640
     realcam.max_wavelength = realcam.min_wavelength +1
-    realcam.render_engine.processes = 16
+    realcam.render_engine.processes = 32
     try:
         Transfert_Matrix = result_inversion.Transfert_Matrix({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid)
         Transfert_Matrix = Transfert_Matrix.load()
@@ -301,15 +296,9 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
         #load wall models
         # check how the wall is described; either CAD or coord
         
-        if ParamsMachine.path_CAD:
-            try:
-                # full_wall, name_material = read_CAD_from_calcam_module(ParamsMachine.path_CAD, world, name_material, wall_material, variant = ParamsMachine.variant_CAD)
-                full_wall = read_CAD_from_components(ParamsMachine, world)
-            except:
-				
-                full_wall, name_material = read_CAD(ParamsMachine.path_CAD, world, name_material, wall_material, variant = ParamsGrid.variant_mag)
-                pdb.set_trace()
-
+        if ParamsMachine.path_CAD is not None:
+            full_wall = load_walls(ParamsMachine, world)
+            
         else: 
             full_wall = axisymmetric_mesh_from_polygon(RZwall)
             full_wall.material = wall_material
@@ -560,7 +549,6 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     elapsed = end - start
     print(f"time setup camera : {elapsed:.3f} seconds")
 
-
     realcam.observe()
     pipelines = realcam.pipelines[0]
     print('shape full transfert matrix = ' + str(pipelines.matrix.shape))
@@ -691,7 +679,7 @@ def project_to_camera(camera, coordinates_2d, toroidal_angle, radius):
         [0, 0, 1]
     ])
 
-    # Apply the rotation to the coordinates
+    # Apraw the rotation to the coordinates
     rotated_coordinates = np.dot(coordinates_3d, rotation_matrix.T)
 
     # Project the rotated coordinates onto the camera plane using the VectorCamera
@@ -1005,7 +993,7 @@ def reduce_camera_precision(camera, mask, vid, decimation =1):
     pixel_directions = downsample_with_avg(camera.pixel_directions, decimation)
     # pixel_directions = pixel_directions[::decimation, ::decimation]
     pixel_origins = camera.pixel_origins[::decimation, ::decimation]
-    pixel_origins[np.invert(mask.astype('bool'))] = Point3D(np.NaN, np.NaN, np.NaN)
+    pixel_origins[np.invert(mask)] = Point3D(np.NaN, np.NaN, np.NaN)
 
     camera = VectorCamera(pixel_origins, pixel_directions)
 
@@ -1015,8 +1003,7 @@ def reduce_camera_precision(camera, mask, vid, decimation =1):
 def downsample_with_avg(matrix, block_size=4):
     # Get the shape of the matrix
     rows, cols = matrix.shape
-    if matrix.dtype == 'int8':
-        matrix = np.abs(matrix)
+
      # Create a result matrix initialized with the original values
     
 
@@ -1035,11 +1022,12 @@ def downsample_with_avg(matrix, block_size=4):
                 block_mean = np.mean(block)
                  
                  # Assign the mean to the result matrix at the block's top-left corner
-                if matrix.dtype == 'int8':
-                    if block_mean == 1:
-                        result[i//block_size, j//block_size] = block_mean
+                if matrix.dtype == bool:
+                    if block.all() == True:
+                        result[i//block_size, j//block_size] = True
                     else:
-                        result[i//block_size, j//block_size] = 0
+                        result[i//block_size, j//block_size] = False
+
                 else:
                     result[i//block_size, j//block_size] = block_mean
      
@@ -1524,14 +1512,6 @@ class separatrix_map:
         self.psisep = magflux.boundary.psi[idx]
 
 
-def check_shot_and_video(nshot, path_vid):
-    if str(nshot) not in path_vid:
-        continuation = input('nshot not the same as path video, do you want to continue ? [y/n]')
-        if continuation.lower() == 'y' or continuation.lower() == 'yes':
-            return
-        else:
-            raise Exception('function aborted, nshot not consistent with path of video')
-        
 
 
 def check_intersection_wall_from_path(path_CAD, path_calibration):
@@ -1618,7 +1598,7 @@ def optimize_boundary_grid(realcam, world, R_max_noeud, R_min_noeud, Z_max_noeud
 
 
 
-def read_CAD(path_CAD, world, name_material = 'AbsorbingSurface', wall_material = AbsorbingSurface(), variant = 'default'):
+# def read_CAD(path_CAD, world, name_material = 'AbsorbingSurface', wall_material = AbsorbingSurface(), variant = 'default'):
 
     import json
     stl_files = [f for f in os.listdir(path_CAD) if (f.endswith('.stl') or f.endswith('.obj'))]
@@ -1654,7 +1634,7 @@ def read_CAD(path_CAD, world, name_material = 'AbsorbingSurface', wall_material 
     return full_wall, name_material
 
 
-def read_CALCAM_CAD(path_CAD, world, wall_materials):
+# def read_CALCAM_CAD(path_CAD, world, wall_materials):
     import json
     with open(path_CAD + 'model.json') as f:
         dat = json.load(f) 
@@ -1742,52 +1722,6 @@ def is_point_in_contour(x, y, contour_points):
 
     contour_path = Path(contour_points)
     return contour_path.contains_point((x, y))
-
-
-
-
-def create_synth_image(path_parameters = None, path_transfert_matrix = None):
-    [transfert_matrix, 
-            pixels,
-            noeuds, 
-            nb_noeuds_r, 
-            nb_noeuds_z, 
-            R_max_noeud, 
-            R_min_noeud, 
-            Z_max_noeud, 
-            Z_min_noeud, 
-            R_noeud,
-            Z_noeud, 
-            mask_pixel, 
-            mask_noeud,
-            path_parameters] = load_transfert_matrix_and_parameters(path_parameters, path_transfert_matrix)
-    synth_node = np.ones((transfert_matrix.shape[1], 1))
-    synth_im = transfert_matrix.dot(synth_node)
-    synth_im_full = reconstruct_2D_image(np.squeeze(synth_im), mask_pixel)
-    utility_functions.plot_image(synth_im_full.T, title=path_parameters)
-    plt.savefig(main_folder_image + 'synth_image_full_emissivity.png')
-    return (transfert_matrix, 
-            pixels,
-            noeuds, 
-            nb_noeuds_r, 
-            nb_noeuds_z, 
-            R_max_noeud, 
-            R_min_noeud, 
-            Z_max_noeud, 
-            Z_min_noeud, 
-            R_noeud,
-            Z_noeud, 
-            mask_pixel, 
-            mask_noeud,
-            path_parameters,
-            synth_im_full)
-
-
-
-
-
-
-
 
 def find_material(components_dict, query_name):
     
@@ -2049,6 +1983,7 @@ def load_mask(path_calibration, path_mask):
                 mask_pixel = np.load(path_mask)
     mask_pixel[np.isnan(mask_pixel)] = 0 #handle ill defined mask
     mask_pixel = np.abs(mask_pixel)# handle calcam convention, set all the non zero indices to positive for further process 
+    mask_pixel.dtype = bool
     return mask_pixel, name_mask
 
 
@@ -2444,26 +2379,77 @@ def load_components(namefile, features):
 
 
 
+def read_CAD_from_raw(ParamsMachine, world):
+    #fetch enabled wall components in main components file in Tomography/ressources
+    components_list = set(components.keys())
 
+    #load names of all components stored in the raw files
+    features_files = os.listdir(ParamsMachine.path_CAD)
+    features = [os.path.splitext(features)[0] for features in features_files] #remove raw extension from name 
+    extension = os.path.splitext(features_files[0])[1] 
+    #select only features listed in the main components files
+    enabled_features = list(components_list & set(features))
+    path_enabled_features = [ParamsMachine.path_CAD + features + extension for features in enabled_features] #full path for enabled components
+
+    #set up Node for better hierarchy of wall components (relevant for raytracing computing memory)
+    wall_group = Node(parent=world)
+
+    #get extension type for file
+    if ParamsMachine.name_material == "absorbing_surface":
+        if extension == '.ply':
+            full_wall =  [import_ply(f, parent = wall_group , material = AbsorbingSurface(), name = enabled_features[i]) for i, f in enumerate(path_enabled_features)]
+        elif extension == '.stl':
+            full_wall =  [import_stl(f, parent = wall_group , material = AbsorbingSurface(), name = enabled_features[i]) for i, f in enumerate(path_enabled_features)]
+        else:
+            raise(NameError('unrecognised 3D files extension'))
+    else:
+        # ParamsMachine.name_material should be the path to a components file containing each type of the enabled components
+        wall_materials = load_components(ParamsMachine.name_material, enabled_features)
+        if extension == '.ply':
+            full_wall =  [import_ply(f, parent = wall_group , material = wall_materials[i], name = enabled_features[i]) for i, f in enumerate(path_enabled_features)]
+        elif extension == '.stl':
+            full_wall =  [import_stl(f, parent = wall_group , material = wall_materials[i], name = enabled_features[i]) for i, f in enumerate(path_enabled_features)]
+        else:
+            raise(NameError('unrecognised 3D files extension'))
+    return full_wall
 
 def read_CAD_from_components(ParamsMachine, world):
     import calcam
-   
     CAD = calcam.CADModel(ParamsMachine.path_CAD, model_variant = ParamsMachine.variant_CAD)
     features = CAD.get_enabled_features()
+
+    #read the file Tomography/ressources/components.yaml, listing each elements of the CAD model that need to be enabled.
     components_list = set(components.keys())
     enabled_features = list(components_list & set(features))
     print(features)
-
     CAD.enable_only(enabled_features)
     path_stl = [CAD.features[feature].filename for feature in enabled_features] 
-    
-    if ParamsMachine.name_material == "absorbing_surface":
 
-        full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = AbsorbingSurface(), name = features[i]) for i, f in enumerate(path_stl)]
+    #create node to load all meshes for more efficient loading
+    wall_group = Node(parent=world)
+
+    #load each enabled features, depending on the type of materials
+    if ParamsMachine.name_material == "absorbing_surface":
+        # meshes in the CAD model on West are oriented (up direction) in the +Y direction, they need to be rotated.
+        if ParamsMachine.machine == 'WEST':
+            full_wall =  [import_stl(f, parent = wall_group, scaling = 0.001 , material = AbsorbingSurface(), name = features[i], transform = rotate(0, -90,0)) for i, f in enumerate(path_stl)]
+        # meshes in the CAD model on Compass are oriented (up direction) in the +Z direction, no need for rotation
+        elif ParamsMachine.machine == 'COMPASS':
+            full_wall =  [import_stl(f, parent = wall_group, scaling = 0.001 , material = AbsorbingSurface(), name = features[i]) for i, f in enumerate(path_stl)]
+        else:
+            raise(NameError('unrecognized machine'))
     else:
+        # Look into the file (path in ParamsMachine.name_material) to assign material type to each enabled features
         wall_materials = load_components(ParamsMachine.name_material, enabled_features)
-        full_wall =  [import_stl(f, parent = world, scaling = 0.001 , material = wall_materials[i], name = features[i]) for i, f in enumerate(path_stl)]
+
+        # meshes in the CAD model on West are oriented (up direction) in the +Y direction, they need to be rotated.
+        if ParamsMachine.machine == 'WEST':
+            full_wall =  [import_stl(f, parent = wall_group, scaling = 0.001 , material = wall_materials[i], name = features[i],transform = rotate(0, -90,0)) for i, f in enumerate(path_stl)]
+        # meshes in the CAD model on Compass are oriented (up direction) in the +Z direction, no need for rotation
+        elif ParamsMachine.machine == 'COMPASS':
+            full_wall =  [import_stl(f, parent = wall_group, scaling = 0.001 , material = wall_materials[i], name = features[i]) for i, f in enumerate(path_stl)]
+        else:
+            raise(NameError('unrecognized machine'))
     CAD.unload()
     return full_wall
 
@@ -2537,7 +2523,10 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     Z_wall = RZwall[:, 1]
 
     wall_limit = axisymmetric_mesh_from_polygon(RZwall)
-
+    # wall_limit.material = AbsorbingSurface()
+    # wall_limit.material = RoughTungsten(0.5)
+    # wall_limit.parent = world
+    full_wall = load_walls(ParamsMachine, world)
     # R_max_noeud = pos_camera_RPHIZ[0] 
     # R_min_noeud = pos_camera_RPHIZ[0] 
     # Z_max_noeud = pos_camera_RPHIZ[2] 
@@ -2585,16 +2574,66 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     camera = VectorCamera(pixel_origins[np.newaxis, :], pixel_directions[np.newaxis, :], parent = world)
 
     # TRANSFORM = translate()
-
     camera.frame_sampler=FullFrameSampler2D()
     camera.pipelines=[real_pipeline]
     camera.pixel_samples = 100
     camera.min_wavelength = 640
     camera.max_wavelength = camera.min_wavelength +1
-    camera.render_engine.processes = 16
+    camera.render_engine.processes = 32
     camera.spectral_bins = plasma2.bins
     camera.observe()
-    tf = np.squeeze(camera.pipelines[0].matrix)
+    pipelines = camera.pipelines[0]
+    print('shape full transfert matrix = ' + str(pipelines.matrix.shape))
+    flattened_matr = pipelines.matrix.reshape(pipelines.matrix.shape[0] * pipelines.matrix.shape[1], pipelines.matrix.shape[2])
+    
+    if flattened_matr.shape[1] > num_points_rz:
+        #some elements of the grid don't see the field lines. Checking if they are out of the field of view of the camera
+        invisible_nodes = np.sum(flattened_matr, 0)[-1]
+        if invisible_nodes>0:
+            print('nodes not seen, choose bigger grid limits, or wall limits differ between CAD model and magnetic equilibrium')
+            # pdb.set_trace()
+        flattened_matr = flattened_matr[:, :-1]
+    print('flattened_matr shape', flattened_matr.shape)
 
 
-    return R1, R2, Z1, Z2, tf, grid_mask, extent_RZ, R_wall, Z_wall
+    pixels,  = np.where(np.sum(flattened_matr, 1)) #sum over nodes
+    noeuds,  = np.where(np.sum(flattened_matr, 0)) #sum over pixels
+    #save results
+
+    mask_pixel = np.zeros(flattened_matr.shape[0], dtype = bool)
+    mask_pixel[pixels] = True
+    mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
+
+    true_nodes = np.flatnonzero(RZ_mask_grid)
+    mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
+    mask_noeud.ravel()[true_nodes[noeuds]] = True
+    print('shape voxel_map ', plasma2.voxel_map.shape)
+    print('shape mask_noeud ', mask_noeud.shape)
+    
+    transfert_matrix = flattened_matr[pixels,:][:, noeuds]
+
+    nb_visible_noeuds = len(np.unique(noeuds))
+    nb_vision_pixel = len(np.unique(pixels))
+    print('visible node = ' + str(nb_visible_noeuds) + 'out of ' + str(nb_noeuds_r*nb_noeuds_z))
+    print('vision pixels = ' + str(nb_vision_pixel) + 'out of ' + str(pipelines.matrix.shape[0] * pipelines.matrix.shape[1]))
+
+    transfert_matrix = csr_matrix(transfert_matrix)
+    print(transfert_matrix.shape)
+    pixels = np.squeeze(pixels)
+    noeuds = np.squeeze(noeuds)
+    dict_spectro = dict(R1 = R1, R2= R2, Z1=Z1, Z2= Z2, grid_mask = grid_mask, extent_RZ = extent_RZ, R_wall = R_wall,  Z_wall= Z_wall, transfert_matrix = transfert_matrix, mask_pixel= mask_pixel, mask_noeud= mask_noeud,  pipelines= pipelines, cell_r = cell_r, cell_z= cell_z)
+    savemat('spectro_cherab__wall_tungst_05.mat', dict_spectro)
+    return R1, R2, Z1, Z2, grid_mask, extent_RZ, R_wall, Z_wall, transfert_matrix, mask_pixel, mask_noeud, pipelines, cell_r, cell_z
+
+
+def load_walls(ParamsMachine, world):
+    filename, ext = os.path.splitext(ParamsMachine.path_CAD)
+    if ext == '':
+        full_wall = read_CAD_from_raw(ParamsMachine, world)
+    elif ext == 'ccm': 
+        full_wall = read_CAD_from_components(ParamsMachine, world)
+    else:
+        raise(NameError('cannot read 3D files, extension {ext} unrecognised' ))
+        
+    return full_wall
+                
