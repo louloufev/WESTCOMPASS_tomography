@@ -370,7 +370,6 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         #     else:
         #         inv_image, residual = invert_sart(image)
             inv_image, residual = invert_sart(np.squeeze(image), beta_laplace = beta_laplace, max_iterations=max_iterations, conv_tol=0.0001)
-            print(residual[-1])
             inv_images[i, :] = inv_image
             inv_normed[i, :] = inv_image
             inv_images_thresholded[i, :] = inv_image
@@ -397,63 +396,7 @@ def reconstruct_2D_image(image, mask, dim_r = None, dim_z = None):
         image_reconstructed = np.sum(image_reconstructed, 1)
 
     return image_reconstructed
-                                   
-def plot_results_inversion(inv_image, inv_normed, inv_image_thresholded, inv_image_thresholded_normed, transfert_matrix, image, mask_pixel, mask_noeud, pixels, noeuds, R_wall, Z_wall, nb_noeuds_r, nb_noeuds_z, R_noeud, Z_noeud, c = 0):
-    extent = (R_noeud[0], R_noeud[-1], Z_noeud[0], Z_noeud[-1])
-    image_retrofit = transfert_matrix.dot(inv_image)
-    inv_image_full = reconstruct_2D_image(inv_image, mask_noeud, nb_noeuds_r, nb_noeuds_z)
-    inv_normed_full = reconstruct_2D_image(inv_normed, mask_noeud, nb_noeuds_r, nb_noeuds_z)    
-    inv_image_thresholded_full = reconstruct_2D_image(inv_image_thresholded, mask_noeud, nb_noeuds_r, nb_noeuds_z)
-    inv_image_thresholded_normed_full = reconstruct_2D_image(inv_image_thresholded_normed, mask_noeud, nb_noeuds_r, nb_noeuds_z)
-    image_retrofit_full = reconstruct_2D_image(image_retrofit, mask_pixel, mask_pixel.shape[0], mask_pixel.shape[1])
-    figure_results =plt.figure()
-    #synthetic image
-    plt.subplot(2,3,1)
-    plt.imshow(image)
-    plt.colorbar()
-    plt.title('image')
-
-    #retro fit
-    plt.subplot(2,3,2)
-    plt.imshow(image_retrofit_full)
-    plt.colorbar()
-    plt.title('Retro fit')
-
-    #inversion
-    plt.subplot(2,3,3)
-    plt.imshow(inv_image_full.T, extent = extent, origin = 'lower')
-    plt.colorbar()
-    plt.plot(R_wall, Z_wall, 'r')
-    plt.xlabel('R [m]')
-    plt.ylabel('Z [m]')
-    plt.title('inversed image')
-    
-    #normed inversion
-    plt.subplot(2,3,4)
-    plt.imshow(inv_normed_full.T, extent = extent, origin = 'upper')
-    plt.colorbar()
-    plt.plot(R_wall, Z_wall, 'r')
-    plt.xlabel('R [m]')
-    plt.ylabel('Z [m]')
-    plt.title('inversed normalized image')
-    # thresholded inversion
-    plt.subplot(2,3,5)
-    plt.imshow(inv_image_thresholded_full, extent = extent, origin = 'lower')
-    plt.colorbar()
-    plt.plot(R_wall, Z_wall, 'r')
-    plt.xlabel('R [m]')
-    plt.ylabel('Z [m]')
-    # thresholded and normalized inversion
-    plt.subplot(2,3,6)
-    plt.imshow(inv_image_thresholded_normed_full, extent = extent)
-    plt.colorbar()
-    plt.title('inversed image thresholded and normalized, c = '+ str(c))
-    plt.plot(R_wall, Z_wall, 'r')
-    plt.xlabel('R [m]')
-    plt.ylabel('Z [m]')
-    plt.tight_layout()
-    return figure_results
-
+      
 def inverse_vid(transfert_matrix, mask_pixel,mask_noeud, pixels, noeuds, vid, R_noeud, Z_noeud, inversion_method, inversion_parameter, folder_inverse_matrix,dict_vid, derivative_matrix = None):
     """
     main function for inverting video
@@ -575,66 +518,7 @@ def get_name(path):
 
 
 
-                        
-def plot_results_inversion_simplified(inv_image, transfert_matrix, image, mask_pixel, mask_noeud, pixels, noeuds, R_wall, Z_wall, nb_noeuds_r, nb_noeuds_z, R_noeud, Z_noeud, c = 0, cmap = 'viridis', norm = 'linear', magflux = None):
-    extent = (R_noeud[0], R_noeud[-1], Z_noeud[0], Z_noeud[-1])
-    image_retrofit = transfert_matrix.dot(inv_image)
-    inv_image_full = reconstruct_2D_image(inv_image, mask_noeud, nb_noeuds_r, nb_noeuds_z)
-    image_retrofit_full = reconstruct_2D_image(image_retrofit, mask_pixel, mask_pixel.shape[0], mask_pixel.shape[1])
-    import matplotlib.colors as mcolors
-    if norm == 'log':
-        image = np.log2(image+1)   
-        image_retrofit_full = np.log2(image_retrofit_full+1)
-        inv_image_full = np.log2(inv_image_full+1)
-    vmin = image.min()
-    vmax = image.max()
-    
-
-    fig = plt.figure(figsize=(12, 7))
-    fig.subplots_adjust(left=0.1, right=0.9, bottom=0.1, top=0.9, wspace=0.6, hspace=0.6)
-    
-    #real image
-    axi = fig.add_subplot(2, 2,1)
-    plt.imshow(image.T, cmap = cmap, vmin = vmin, vmax = vmax)
-    plt.colorbar()
-    plt.title('image')
-
-    #retro fit
-    axi = fig.add_subplot(2, 2,2)
-    plt.imshow(image_retrofit_full.T, cmap = cmap, vmin = vmin, vmax = vmax)
-    plt.colorbar()
-    plt.title('Retro fit')
-
-    #inversion
-    axi = fig.add_subplot(2, 2,3)
-    plt.imshow(inv_image_full.T, extent = extent, origin = 'lower', cmap = cmap, vmin = -1000, vmax = 1000)
-    plt.colorbar()
-    plt.plot(R_wall, Z_wall, 'r')
-    # if magflux:
-    #     nbr_levels = 30
-    #     levels_req = np.linspace(np.nanmin(magflux.psi), \
-    #                         np.nanmax(magflux.psi), \
-    #                         nbr_levels)
-    #     axi.contour(magflux.r, magflux.z, \
-    #                 np.squeeze(magflux.psi), \
-    #                 levels=levels_req, colors='blue', linestyles='-', \
-    #                 linewidths=0.5)
-    #     # Separatrix plot
-    #     axi.contour(magflux.r, magflux.z, \
-    #                 np.squeeze(magflux.psi), \
-    #                 levels=(magflux.psisep,), linestyles='-', colors='tab:red')
-
-    plt.xlabel('R [m]')
-    plt.ylabel('Z [m]')
-    plt.title('inversed image')
-    plt.show(block = False)
-    #error retro fit
-    axi = fig.add_subplot(2, 2,4)
-    plt.imshow(np.abs(image_retrofit_full-image)/image, cmap = cmap)
-    plt.colorbar()
-    plt.title('Error Retro fit')
-    return fig
-
+       
 
 def prep_inversion(transfert_matrix, mask_pixel, mask_noeud, pixels, noeuds, inversion_parameter, R_noeud, Z_noeud):
     
@@ -651,56 +535,6 @@ def prep_inversion(transfert_matrix, mask_pixel, mask_noeud, pixels, noeuds, inv
         transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = reindex_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud)
 
 
-    # if 'zmin' in inversion_parameter.keys():
-        
-    #     mask_copy[R_noeud>0.84, Z_noeud<inversion_parameter['zmin']] = 0
-    #     # transfert_matrix[:, mask.flatten()[noeuds]]
-    # if 'wallnobaffle' in inversion_parameter.keys():
-    #     transfert_matrix = transfert_matrix.todense()
-    #     WALL = loadmat('WALL_LIMITER_NO_BAFFLE.mat')
-    #     RZWALL = np.array([WALL['R'], WALL['Z']])
-    #     RZWALL = np.squeeze(RZWALL).T
-    #     RZWALL = np.flip(RZWALL, 0)
-    #     wall_limit = axisymmetric_mesh_from_polygon(RZWALL)
-    #     for i, r in enumerate(R_noeud):
-    #         for j, z in enumerate(Z_noeud):  
-    #             pointrz = Point3D(r, 0, z)
-    #             if not wall_limit.contains(pointrz):          
-    #                 mask_copy[i, j]= 0
-    #     noeuds_flat = mask_copy.flatten()[noeuds_copy]
-    #     noeuds_flat.dtype = bool
-    #     transfert_matrix = transfert_matrix[:, noeuds_flat]
-    #     mask_noeud = mask_copy[:, None, :]
-    #     pixels_flat = np.where(np.sum(transfert_matrix, 1))[0]
-    #     transfert_matrix = transfert_matrix[pixels_flat, :]
-    #     mask_pixel_copy = np.zeros_like(mask_pixel).flatten()
-    #     mask_pixel_copy[pixels[pixels_flat]] = 1
-    #     mask_pixel = mask_pixel_copy.reshape(mask_pixel.shape)
-    # if 'nobaffle' in  inversion_parameter.keys():
-    #     transfert_matrix = transfert_matrix.todense()
-
-    #     noR = np.squeeze(R_noeud>2.45)
-    #     noz = np.squeeze(Z_noeud<-0.72)
-    #     mask_baffle = noR[:, None] * noz[None, :]
-    #     mask_copy[mask_baffle] = 0
-    #     noeuds_flat = mask_copy.flatten()[noeuds_copy]
-    #     noeuds_flat.dtype = bool
-    #     transfert_matrix = transfert_matrix[:, noeuds_flat]
-    #     mask_noeud = mask_copy[:, None, :]
-    #     pixels_flat = np.where(np.sum(transfert_matrix, 1))[0]
-    #     transfert_matrix = transfert_matrix[pixels_flat, :]
-    #     mask_pixel_copy = np.zeros_like(mask_pixel).flatten()
-    #     mask_pixel_copy[pixels[pixels_flat]] = 1
-    #     mask_pixel_copy = mask_pixel_copy.reshape(mask_pixel.shape)
-    #     # add 3rd dimension for toroidal dependency (needs to be done for previous steps, actually useless here)
-    #     # if mask_noeud.ndim == 3:
-    #     #     mask_noeud = np.tile(mask_copy, (1, mask_noeud.shape[1], 1))
-    #     # else:
-    #     #     mask_noeud = mask_copy[:, None, :]
-    # if 'mask_pixel' in inversion_parameter.keys():
-    #     mask_inversion = np.load('masks/west/'+ inversion_parameter['mask_pixel'] + '.npy')
-    #     transfert_matrix, pixels_flat, noeuds_flat, mask_pixel, mask_noeud = reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud, mask_inversion)
-    #     pdb.set_trace()
         
 
     return transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud
@@ -716,10 +550,7 @@ def reindex_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_
     mask_pixel = np.zeros(pixel_shape, dtype = bool).flatten()
     mask_pixel[pixels] = True
     mask_pixel = mask_pixel.reshape(pixel_shape)
-    # x, y, z = np.where(RZ_mask_grid)
-    # x = x[noeuds]
-    # y = y[noeuds]
-    # z = z[noeuds]
+
     
     mask_noeud[:] = False
     try:
@@ -753,7 +584,6 @@ def reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_
         noeuds_out = noeuds[visible_nodes]
         transfert_matrix_out = transfert_matrix_out[:, visible_nodes]
         noeuds_mask = np.where(mask_noeud.flatten())[0]
-        # noeuds_mask[visible_nodes]
         mask_noeud_out =mask_noeud.flatten()
         mask_noeud_out[:] = 0
         mask_noeud_out[noeuds_mask[visible_nodes]] = 1
@@ -763,20 +593,15 @@ def reshape_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_
 
 
 def inverse_vid_from_class(Transfert_Matrix, Inversion_results, ParamsMachine, ParamsGrid, ParamsVid):
-    
-    
-    #initisalisation
-    # images = np.reshape(vid, (vid.shape[0], vid.shape[1]*vid.shape[2]))
-    # images = images[:, mask_pixel]
-
-    #prep transfert matrix for inversion
-
     import time
     start = time.time()
+
+    #prep transfert matrix for inversion
     transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud = prep_inversion(Transfert_Matrix.transfert_matrix, Transfert_Matrix.mask_pixel, Transfert_Matrix.mask_noeud, Transfert_Matrix.pixels, Transfert_Matrix.noeuds, ParamsVid.inversion_parameter, Transfert_Matrix.R_noeud, Transfert_Matrix.Z_noeud)
     end = time.time()
     elapsed = end-start
     print(f"Preparation transfert_matrix : {elapsed:.3f} seconds")
+
 
     images = Inversion_results.vid[:, mask_pixel]
     inversion_results, inversion_results_normed, inversion_results_thresholded,inversion_results_thresholded_normed, images_retrofit, transfert_matrix = inversion_and_thresolding(images, 
@@ -786,9 +611,6 @@ def inverse_vid_from_class(Transfert_Matrix, Inversion_results, ParamsMachine, P
                                                                                                                                                                ParamsVid.dict_vid,
                                                                                                                                                                inversion_parameter=ParamsVid.inversion_parameter)
     Inversion_results.inversion_results = inversion_results
-    # Inversion_results.inversion_results_normed = inversion_results_normed
-    # Inversion_results.inversion_results_thresholded = inversion_results_thresholded
-    # Inversion_results.inversion_results_thresholded_normed = inversion_results_thresholded_normed
     Inversion_results.images_retrofit = images_retrofit
     Inversion_results.inversion_results_thresholded = inversion_results_thresholded
     return Inversion_results
@@ -847,6 +669,5 @@ def denoising(Inversion_results):
         for i in range(images.shape[0]):
             image = images.T[:, i]
             inv_images_thresholded[:, i] = np.squeeze(inversion.thresholding(image[:, np.newaxis], c = c))
-        #     inv_images_thresholded_normed[i, :] = inv_image
 
         return inv_images_thresholded.T

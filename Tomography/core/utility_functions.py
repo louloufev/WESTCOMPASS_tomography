@@ -1146,3 +1146,13 @@ def polygon_orientation(x, y):
     
     Trigonometric_orientation = True if signed_area > 0 else False
     return Trigonometric_orientation, signed_area
+
+
+
+
+def write_arrays_in_txt_file(filename, data):
+
+    # Write each element to the file
+    with open(filename, "w") as f:
+        for item in data:
+            f.write(str(item) + "\n")

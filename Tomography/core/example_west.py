@@ -28,7 +28,8 @@ path_calibration = '/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibra
 # path for the limits of the vessel/ 3D model of the vessel. 
 # path_wall = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/COMPASS_RZ_vessel.mat'
 path_wall = '/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
-path_CAD ='/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/20250429 full model.ccm'
+# path_CAD ='/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/20250429 full model.ccm'
+path_CAD = 'Tomography/ressources/2025_12_03_super_cropped/'
 ######
 ###### raytracing parameters : parameters for the calculation of the geometry matrix
 machine = 'WEST'
@@ -36,17 +37,18 @@ symetry = 'toroidal' #hypothesis on the emissivity uniformity. Can be set to 'to
 # parameters for dimension of the 2D plane
 phi_grid = None #toroidal angle (in degrees)
 n_polar = None # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
-dr_grid = 80e-3 #radius step of 2D grid
-dz_grid = 80e-3 #height step of 2D grid
+dr_grid = 20e-3 #radius step of 2D grid
+dz_grid = 20e-3 #height step of 2D grid
 extra_steps = None
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
 grid_precision_multiplier = None
 variant_mag=None
 revision = None
-dict_vid = {'sigma' : 2, 'median' : 0}
+dict_vid = {'sigma' : 0, 'median' : 0}
 variant_CAD = 'Default' # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
-name_material =     'absorbing_surface'
+# name_material = "absorbing_surface"
+name_material =     'Tomography/ressources/components_west'
 c = 3
 
 
@@ -60,7 +62,7 @@ inversion_parameter = {}
 
     # min_visibility_node : 
 
-decimation = 16# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
+decimation = None# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
     # decimation = 1 : takes all pixels
     # decimation = 2 : takes the mean value of 2*2 pixel block, effectively dividing by 4 the number of pixels
 
@@ -108,7 +110,7 @@ ParamsGrid= result_inversion.ParamsGrid(dr_grid = dr_grid,
                                                     phi_grid = phi_grid,
                                                     grid_precision_multiplier =grid_precision_multiplier,
                                                     n_polar = n_polar,
-                                                    crop_center = False,
+                                                    crop_center = True,
                                                     extra_steps = extra_steps,
                                                     nshot = nshot_grid,
                                                     class_name = 'ParamsGrid')
@@ -125,7 +127,7 @@ ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
                                                     class_name = 'ParamsVid')
 
 
-Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
+# Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
 # import traceback
 # i = 0
 # try:
