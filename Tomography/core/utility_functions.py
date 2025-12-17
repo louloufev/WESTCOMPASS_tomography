@@ -6,6 +6,7 @@ import os
 import imageio
 from .inversion_module import reconstruct_2D_image
 from typing import Optional, Tuple
+import re
 
 def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, vmin = None, title = '', cmap = 'viridis'):
     path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
@@ -1149,6 +1150,49 @@ def polygon_orientation(x, y):
 
 
 
+def draw_polygon(fig=None, ax=None):
+    """
+    Lets the user click on an existing Matplotlib figure to draw a polygon.
+    If fig/ax are None, creates a new figure.
+    Right-click or Enter to finish.
+    Returns: list of (x, y) vertices.
+    """
+
+    # Create figure/axes if not supplied
+    if fig is None or ax is None:
+        fig, ax = plt.subplots()
+        ax.set_title("Click to add vertices. Right-click or Enter to finish.")
+
+    points = []
+    line, = ax.plot([], [], marker='o')
+
+    def onclick(event):
+        # End drawing on right-click
+        if event.button == 3:
+            fig.canvas.mpl_disconnect(cid_click)
+            fig.canvas.mpl_disconnect(cid_key)
+            return
+
+        # Accept only valid plot clicks
+        if event.inaxes == ax and event.xdata is not None and event.ydata is not None:
+            points.append((event.xdata, event.ydata))
+            xs, ys = zip(*points)
+            line.set_data(xs, ys)
+            fig.canvas.draw()
+
+    # End drawing on Enter key
+    def onkey(event):
+        if event.key == "enter":
+            fig.canvas.mpl_disconnect(cid_click)
+            fig.canvas.mpl_disconnect(cid_key)
+
+    cid_click = fig.canvas.mpl_connect('button_press_event', onclick)
+    cid_key   = fig.canvas.mpl_connect('key_press_event', onkey)
+
+    plt.show()
+
+    return points
+
 
 def write_arrays_in_txt_file(filename, data):
 
@@ -1156,3 +1200,51 @@ def write_arrays_in_txt_file(filename, data):
     with open(filename, "w") as f:
         for item in data:
             f.write(str(item) + "\n")
+
+
+def clean_points_inside_poly(vertices, points):
+    #remove points inside the polygon indicated by vertices
+    # vertices : list of points [(x1, y1), (x2, y2),...]
+    #  points : array 
+    from matplotlib.path import Path
+    poly = Path(vertices)
+    mask = poly.contains_points(points)
+    return points[~mask, :]
+
+
+
+def order_clockwise(points):
+    """
+    Orders a set of 2D points (N,2) in clockwise orientation.
+    Input: list of points or NumPy array of shape (N,2)
+    Output: NumPy array of shape (N,2), ordered clockwise.
+    """
+    pts = np.asarray(points)
+
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise ValueError("Input must be of shape (N, 2).")
+
+    centroid = pts.mean(axis=0)
+
+    # Compute angle of each point around centroid
+    angles = np.arctan2(pts[:,1] - centroid[1], pts[:,0] - centroid[0])
+
+    # Clockwise = sort in descending angle
+    order = np.argsort(-angles)
+
+    return pts[order]
+
+
+
+def extract_all_numbers(s):
+    """
+    Returns a list of all numbers (floats) found in the string.
+    """
+    return [float(x) for x in re.findall(r"[-+]?\d*\.?\d+", s)]
+
+
+
+def extract_after_keyword(s, keyword):
+    pattern = rf"{keyword}\s*([-+]?\d*\.?\d+)"
+    m = re.search(pattern, s)
+    return float(m.group(1)) if m else None

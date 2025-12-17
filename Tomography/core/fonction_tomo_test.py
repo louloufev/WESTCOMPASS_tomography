@@ -10,7 +10,7 @@ from cherab.tools.primitives.axisymmetric_mesh import axisymmetric_mesh_from_pol
 from raysect.core.math.polygon import triangulate2d
 from cherab.tools.raytransfer import RayTransferPipeline2D, RayTransferCylinder
 from cherab.tools.raytransfer import RoughIron, RoughTungsten, RoughSilver
-import os 
+import os
 from raysect.optical.library.spectra.colours import *
 colours = [yellow, orange, red_orange, red, purple, blue, light_blue, cyan, green]
 from raysect.primitive import Cylinder, Subtract
@@ -350,8 +350,11 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     print('time for input = ', end_time_get_parameters)
     print('time for equilibrium = ', end_time_get_equilibrium)
     print('time for inversion = ', end_time_get_inversion)
-
-    Inversion_results.save()
+    try:
+        Inversion_results.save()
+    except:
+        print('failed to save inversion results')
+        pdb.set_trace()
     return Inversion_results
 
 
@@ -598,7 +601,7 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     print(transfert_matrix.shape)
     pixels = np.squeeze(pixels)
     noeuds = np.squeeze(noeuds)
-
+    
     print('shape reduced transfert matrix = ' + str(transfert_matrix.shape))
     # plt.figure()
     # plt.imshow(np.squeeze(mask_noeud).T, extent= extent_RZ, origin = 'lower' )
@@ -613,10 +616,12 @@ def get_transfert_matrix(Transfert_Matrix, realcam, world, ParamsMachine, Params
     Transfert_Matrix.R_noeud = cell_r
     Transfert_Matrix.Z_noeud = cell_z
     Transfert_Matrix.pixels = pixels
-    
-    Transfert_Matrix.save()
-    "mask_noeud", "mask_pixel", "transfert_matrix", "noeuds", "pixels", "RZwall", "R_noeud", "Z_noeud"
-
+    try:
+        Transfert_Matrix.save()
+    except:
+        print('failed to save transfert matrix')
+        pdb.set_trace()
+        
     # try: 
     #     save_npz(path_transfert_matrix, transfert_matrix)
     # except:
@@ -1695,7 +1700,7 @@ def remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z, 
         psi_int = 0.9*(psisep-psi0)+psi0
     # Create contour for just this isovalue
     contour = plt.contour(r, z, psi, levels=[psi_int], colors='red')
-
+    plt.close()
     # Extract the contour line(s)
     paths = contour.collections[0].get_paths()
 
@@ -2386,31 +2391,47 @@ def read_CAD_from_raw(ParamsMachine, world):
     #load names of all components stored in the raw files
     features_files = os.listdir(ParamsMachine.path_CAD)
     features = [os.path.splitext(features)[0] for features in features_files] #remove raw extension from name 
-    extension = os.path.splitext(features_files[0])[1] 
+    
     #select only features listed in the main components files
-    enabled_features = list(components_list & set(features))
-    path_enabled_features = [ParamsMachine.path_CAD + features + extension for features in enabled_features] #full path for enabled components
+    enabled_features = list(set(features) & components_list)
+    ext_map = {os.path.splitext(f)[0]: os.path.splitext(f)[1] for f in features_files}
+
+    extensions = [ext_map[name] for name in enabled_features]
+    path_enabled_features = [ParamsMachine.path_CAD + features + extensions[i] for i, features in enumerate(enabled_features)] #full path for enabled components
 
     #set up Node for better hierarchy of wall components (relevant for raytracing computing memory)
     wall_group = Node(parent=world)
 
     #get extension type for file
     if ParamsMachine.name_material == "absorbing_surface":
-        if extension == '.ply':
-            full_wall =  [import_ply(f, parent = wall_group , material = AbsorbingSurface(), name = enabled_features[i]) for i, f in enumerate(path_enabled_features)]
-        elif extension == '.stl':
-            full_wall =  [import_stl(f, parent = wall_group , material = AbsorbingSurface(), name = enabled_features[i]) for i, f in enumerate(path_enabled_features)]
-        else:
-            raise(NameError('unrecognised 3D files extension'))
+        for i, f in enumerate(path_enabled_features):
+            if extensions[i] == '.ply':
+                full_wall =  import_ply(f, parent = wall_group , material = AbsorbingSurface(), name = enabled_features[i]) 
+            elif extensions[i] == '.stl':
+                full_wall =  import_stl(f, parent = wall_group , material = AbsorbingSurface(), name = enabled_features[i]) 
+            elif extensions[i] == '.npy':
+                RZ = np.load(f)
+                full_wall = axisymmetric_mesh_from_polygon(RZ)
+                full_wall.parent = wall_group
+                full_wall.material = AbsorbingSurface()
+                full_wall.name = enabled_features[i]
+            else:
+                raise(NameError('unrecognised 3D files extension'))
     else:
         # ParamsMachine.name_material should be the path to a components file containing each type of the enabled components
         wall_materials = load_components(ParamsMachine.name_material, enabled_features)
-        if extension == '.ply':
-            full_wall =  [import_ply(f, parent = wall_group , material = wall_materials[i], name = enabled_features[i]) for i, f in enumerate(path_enabled_features)]
-        elif extension == '.stl':
-            full_wall =  [import_stl(f, parent = wall_group , material = wall_materials[i], name = enabled_features[i]) for i, f in enumerate(path_enabled_features)]
-        else:
-            raise(NameError('unrecognised 3D files extension'))
+        for i, f in enumerate(path_enabled_features):
+            if extensions[i] == '.ply':
+                full_wall =  import_ply(f, parent = wall_group , material = wall_materials[i], name = enabled_features[i]) 
+            elif extensions[i] == '.stl':
+                full_wall =  import_stl(f, parent = wall_group , material = wall_materials[i], name = enabled_features[i]) 
+            elif extensions[i] == '.npy':
+                    RZ = np.load(f)
+                    full_wall = axisymmetric_mesh_from_polygon(RZ)
+                    full_wall.parent = wall_group
+                    full_wall.material = wall_materials[i]
+            else:
+                raise(NameError('unrecognised 3D files extension'))
     return full_wall
 
 def read_CAD_from_components(ParamsMachine, world):
@@ -2469,11 +2490,14 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     R2 = LOS.R2[ind_LODIV]
     Z2 = LOS.Z2[ind_LODIV]
     PHI2 = LOS.PHI2[ind_LODIV]
-
-    X1 = R1*np.cos(PHI1)
-    Y1 = R1*np.sin(PHI1)
-    X2 = R2*np.cos(PHI2)
-    Y2 = R2*np.sin(PHI2)
+    offset_angles = np.mean(PHI1)
+    PHI1 = PHI1-offset_angles+200 #place the LOS inside the cut part of the tokamak
+    PHI2 = PHI2-offset_angles+200 #apply same shift to endpoints
+    deg2rad = np.pi/180
+    X1 = R1*np.cos(PHI1*deg2rad)
+    Y1 = R1*np.sin(PHI1*deg2rad)
+    X2 = R2*np.cos(PHI2*deg2rad)
+    Y2 = R2*np.sin(PHI2*deg2rad)
     x = X2-X1
     y = Y2-Y1
     z = Z2-Z1
@@ -2523,15 +2547,18 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     Z_wall = RZwall[:, 1]
 
     wall_limit = axisymmetric_mesh_from_polygon(RZwall)
-    # wall_limit.material = AbsorbingSurface()
-    # wall_limit.material = RoughTungsten(0.5)
-    # wall_limit.parent = world
-    full_wall = load_walls(ParamsMachine, world)
-    # R_max_noeud = pos_camera_RPHIZ[0] 
-    # R_min_noeud = pos_camera_RPHIZ[0] 
-    # Z_max_noeud = pos_camera_RPHIZ[2] 
-    # Z_min_noeud = pos_camera_RPHIZ[2] 
-    # R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min = optimize_boundary_grid(realcam, world, R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud)
+    flag_wall_limit = 0
+    if flag_wall_limit:
+        name_wall_material = 'tungsten'
+        wall_limit.parent = world
+        if name_wall_material == 'absorbing surface':
+            wall_limit.material = AbsorbingSurface()
+        else:
+            wall_limit.material = RoughTungsten(0.5)
+    else:
+        full_wall = load_walls(ParamsMachine, world)
+
+    
     if ParamsMachine.machine == 'WEST':
         R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[3.129871200000000, 1.834345700000000,0.798600000000000,-0.789011660000000]
     
@@ -2541,13 +2568,6 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
         R_min_noeud = R_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dr_grid
         Z_max_noeud = Z_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dz_grid
         Z_min_noeud = Z_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dz_grid
-     # if verbose:
-    #     fig = utility_functions.plot_cylindrical_coordinates(RPHIZ)
-    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,0,:], fig, color = 'blue', label = 'point [0,0]')
-    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,0,:], fig, color = 'red', label = 'point [-1,0]')
-    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[0,-1,:], fig, color = 'green', label = 'point [0,-1]')
-    #     fig = utility_functions.plot_line_from_cylindrical(pos_camera_RPHIZ, RPHIZ[-1,-1,:], fig, color = 'yellow', label = 'point [-1,-1]')
-    #     plt.savefig(main_folder_image + 'images line of sight and wall')
     extent_RZ =[R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud] 
     nb_noeuds_r = int((R_max_noeud-R_min_noeud)/ParamsGrid.dr_grid)
     nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/ParamsGrid.dz_grid)
@@ -2562,21 +2582,22 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     RZ_mask_grid = np.copy(grid_mask)
     grid_mask = np.tile(grid_mask, (1, n_polar, 1))
     num_points_rz = nb_noeuds_r*nb_noeuds_z
+    step = 1e-4
     plasma2 = RayTransferCylinder(radius_outer=cell_r[-1],
                                         radius_inner=cell_r[0],
                                         height=cell_z[-1] - cell_z[0],
                                         n_radius=nb_noeuds_r, n_height=nb_noeuds_z, 
-                                        mask=grid_mask, n_polar=n_polar, 
+                                        step=step, n_polar=n_polar, 
                                         parent = world, transform=translate(0, 0, cell_z[0]))
  
     real_pipeline = RayTransferPipeline2D()
     
     camera = VectorCamera(pixel_origins[np.newaxis, :], pixel_directions[np.newaxis, :], parent = world)
-
+    pixel_samples = 100
     # TRANSFORM = translate()
     camera.frame_sampler=FullFrameSampler2D()
     camera.pipelines=[real_pipeline]
-    camera.pixel_samples = 100
+    camera.pixel_samples = pixel_samples
     camera.min_wavelength = 640
     camera.max_wavelength = camera.min_wavelength +1
     camera.render_engine.processes = 32
@@ -2604,9 +2625,9 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     mask_pixel[pixels] = True
     mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
 
-    true_nodes = np.flatnonzero(RZ_mask_grid)
     mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
-    mask_noeud.ravel()[true_nodes[noeuds]] = True
+    rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
+    mask_noeud[rows_noeud,indphi, cols_noeud] = True
     print('shape voxel_map ', plasma2.voxel_map.shape)
     print('shape mask_noeud ', mask_noeud.shape)
     
@@ -2621,8 +2642,22 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid):
     print(transfert_matrix.shape)
     pixels = np.squeeze(pixels)
     noeuds = np.squeeze(noeuds)
+
+
+    name_folder = 'mat_saves/'
+    name_material = ParamsMachine.name_material.split('/')[-1]
+    if os.path.splitext(ParamsMachine.path_CAD)[1]:
+        name_CAD = os.path.splitext(ParamsMachine.path_CAD)[1]
+    else:
+        name_CAD = ParamsMachine.path_CAD.split('/')[-2]
+    if flag_wall_limit:
+        name_CAD = '2D_wall_mesh'
+        name_material = name_wall_material
     dict_spectro = dict(R1 = R1, R2= R2, Z1=Z1, Z2= Z2, grid_mask = grid_mask, extent_RZ = extent_RZ, R_wall = R_wall,  Z_wall= Z_wall, transfert_matrix = transfert_matrix, mask_pixel= mask_pixel, mask_noeud= mask_noeud,  pipelines= pipelines, cell_r = cell_r, cell_z= cell_z)
-    savemat('spectro_cherab__wall_tungst_05.mat', dict_spectro)
+    savemat(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'spectro_los.mat', dict_spectro)
+    utility_functions.plot_image(np.squeeze(mask_noeud).T, extent = extent_RZ, origin = 'lower')
+    plt.savefig(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'view spectro los.png')
+    plt.close()
     return R1, R2, Z1, Z2, grid_mask, extent_RZ, R_wall, Z_wall, transfert_matrix, mask_pixel, mask_noeud, pipelines, cell_r, cell_z
 
 
@@ -2630,10 +2665,201 @@ def load_walls(ParamsMachine, world):
     filename, ext = os.path.splitext(ParamsMachine.path_CAD)
     if ext == '':
         full_wall = read_CAD_from_raw(ParamsMachine, world)
-    elif ext == 'ccm': 
+    elif ext == '.ccm': 
         full_wall = read_CAD_from_components(ParamsMachine, world)
     else:
         raise(NameError('cannot read 3D files, extension {ext} unrecognised' ))
         
     return full_wall
                 
+
+def test_wall_cherab(ParamsMachine, ParamsGrid):
+    from scipy.io import loadmat
+    LOS = loadmat('/Home/NF216031/MATLAB_NF/WEST_functions/DVIS/LOS_position_name.mat', struct_as_record=False, squeeze_me=True)
+    LOS =utility_functions.matstruct_to_dict(LOS['dat'])
+
+    ind_LODIV = [i for i, x in enumerate(LOS.name) if 'LODIV' in x]
+    name = LOS.name[ind_LODIV]
+    R1 = LOS.R1[ind_LODIV]
+    Z1 = LOS.Z1[ind_LODIV]
+    PHI1 = 200*np.pi/180
+    X1 = R1*np.cos(PHI1)
+    Y1 = R1*np.sin(PHI1)
+    
+   
+
+    if ParamsMachine.path_wall:
+        try:
+            fwall = loadmat(ParamsMachine.path_wall)
+            RZwall = fwall['RZwall']
+
+        except:
+            RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
+        #check that the last element is the neighbor of the first one and not the same one
+        if(RZwall[0]==RZwall[-1]).all():
+            RZwall = RZwall[:-1]
+            print('erased last element of wall')
+        #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
+        Trigo_orientation, signed_area = utility_functions.polygon_orientation(RZwall[:, 0], RZwall[:, 1])
+        if Trigo_orientation:
+            RZwall = RZwall[::-1]
+            print('wall reversed')
+
+        R_wall = RZwall[:, 0]
+        Z_wall = RZwall[:, 1]
+    else:
+        RZwall = None
+
+    R_wall = RZwall[:, 0]
+    Z_wall = RZwall[:, 1]
+
+    #simplify starting los
+    n = len(R_wall)
+    X1 = X1[0]*np.ones(n)
+    Y1 = Y1[0]*np.ones(n)
+    Z1 = Z1[0]*np.ones(n)
+    X_wall = R_wall*np.cos(PHI1)
+    Y_wall = R_wall*np.sin(PHI1)
+    x = X_wall-X1
+    y = Y_wall-Y1
+    z = Z_wall-Z1
+    p = np.vstack((x, y, z)).T
+
+    # Direction vectors
+
+    # Compute magnitudes
+    mag = np.linalg.norm(p, axis=1, keepdims=True)
+
+    # Avoid divide-by-zero
+    mag[mag == 0] = np.nan
+
+    # Normalize
+    v_norm = p / mag
+    
+    los = np.array([500])
+    los = np.arange(len(R_wall)) #array of the LOS I want to plot. Here plot every LOS
+    n_los = len(los)
+    pixel_origins = np.array([Point3D(X1[v], Y1[v], Z1[v]) for v in los]) 
+    pixel_directions =  np.array([Vector3D(v_norm[v, 0], v_norm[v, 1], v_norm[v, 2]) for v in los])
+    world = World()
+
+    # wall_CAD = read_CAD_from_components(ParamsMachine, world)
+
+
+    wall_limit = axisymmetric_mesh_from_polygon(RZwall)
+    flag_wall_limit = 0
+    if flag_wall_limit:
+        name_wall_material = 'tungsten'
+        wall_limit.parent = world
+        if name_wall_material == 'absorbing surface':
+            wall_limit.material = AbsorbingSurface()
+        else:
+            wall_limit.material = RoughTungsten(0.5)
+    else:
+        full_wall = load_walls(ParamsMachine, world)
+
+    if ParamsMachine.machine == 'WEST':
+        R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[3.129871200000000, 1.834345700000000,0.798600000000000,-0.789011660000000]
+    
+    if ParamsGrid.extra_steps:
+        R_max_noeud = R_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dr_grid
+        R_min_noeud = R_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dr_grid
+        Z_max_noeud = Z_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dz_grid
+        Z_min_noeud = Z_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dz_grid
+    
+    extent_RZ =[R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud] 
+    nb_noeuds_r = int((R_max_noeud-R_min_noeud)/ParamsGrid.dr_grid)
+    nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/ParamsGrid.dz_grid)
+    cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, ParamsGrid.crop_center, ParamsGrid)
+    # The RayTransferCylinder object is fully 3D, but for simplicity we're only
+    # working in 2D as this case is axisymmetric. It is easy enough to pass 3D
+    # views of our 2D data into the RayTransferCylinder object: we just ues a
+    # numpy.newaxis (or equivalently, None) for the toroidal dimension.
+    grid_mask = grid_mask[:, np.newaxis, :]
+    
+    n_polar = 1
+    RZ_mask_grid = np.copy(grid_mask)
+    grid_mask = np.tile(grid_mask, (1, n_polar, 1))
+    num_points_rz = nb_noeuds_r*nb_noeuds_z
+    step = 1e-4
+    plasma2 = RayTransferCylinder(radius_outer=cell_r[-1],
+                                        radius_inner=cell_r[0],
+                                        height=cell_z[-1] - cell_z[0],
+                                        n_radius=nb_noeuds_r, n_height=nb_noeuds_z, 
+                                        n_polar=n_polar, 
+                                        step = step,
+                                        parent = world, transform=translate(0, 0, cell_z[0]))
+ 
+    real_pipeline = RayTransferPipeline2D()
+    
+    camera = VectorCamera(pixel_origins[np.newaxis, :], pixel_directions[np.newaxis, :], parent = world)
+    pixel_samples = 1
+    # TRANSFORM = translate()
+    camera.frame_sampler=FullFrameSampler2D()
+    camera.pipelines=[real_pipeline]
+    camera.pixel_samples = pixel_samples
+    camera.min_wavelength = 640
+    camera.max_wavelength = camera.min_wavelength +1
+    camera.render_engine.processes = 32
+    camera.spectral_bins = plasma2.bins
+    camera.observe()
+    pipelines = camera.pipelines[0]
+    print('shape full transfert matrix = ' + str(pipelines.matrix.shape))
+    flattened_matr = pipelines.matrix.reshape(pipelines.matrix.shape[0] * pipelines.matrix.shape[1], pipelines.matrix.shape[2])
+    
+    if flattened_matr.shape[1] > num_points_rz:
+        #some elements of the grid don't see the field lines. Checking if they are out of the field of view of the camera
+        invisible_nodes = np.sum(flattened_matr, 0)[-1]
+        if invisible_nodes>0:
+            print('nodes not seen, choose bigger grid limits, or wall limits differ between CAD model and magnetic equilibrium')
+            # pdb.set_trace()
+        flattened_matr = flattened_matr[:, :-1]
+    print('flattened_matr shape', flattened_matr.shape)
+
+
+    pixels,  = np.where(np.sum(flattened_matr, 1)) #sum over nodes
+    noeuds,  = np.where(np.sum(flattened_matr, 0)) #sum over pixels
+    #save results
+
+    mask_pixel = np.zeros(flattened_matr.shape[0], dtype = bool)
+    mask_pixel[pixels] = True
+    mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
+
+    mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
+    rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
+    mask_noeud[rows_noeud,indphi, cols_noeud] = True
+    # true_nodes = np.flatnonzero(RZ_mask_grid)
+    # mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
+    # mask_noeud.ravel()[true_nodes[noeuds]] = True
+    print('shape voxel_map ', plasma2.voxel_map.shape)
+    print('shape mask_noeud ', mask_noeud.shape)
+    
+    transfert_matrix = flattened_matr[pixels,:][:, noeuds]
+
+    nb_visible_noeuds = len(np.unique(noeuds))
+    nb_vision_pixel = len(np.unique(pixels))
+    print('visible node = ' + str(nb_visible_noeuds) + 'out of ' + str(nb_noeuds_r*nb_noeuds_z))
+    print('vision pixels = ' + str(nb_vision_pixel) + 'out of ' + str(pipelines.matrix.shape[0] * pipelines.matrix.shape[1]))
+
+    transfert_matrix = csr_matrix(transfert_matrix)
+    print(transfert_matrix.shape)
+    pixels = np.squeeze(pixels)
+    noeuds = np.squeeze(noeuds)
+
+    name_folder = 'mat_saves/'
+    name_material = ParamsMachine.name_material.split('/')[-1]
+    if os.path.splitext(ParamsMachine.path_CAD)[1]:
+        name_CAD = os.path.splitext(ParamsMachine.path_CAD)[1]
+    else:
+        name_CAD = ParamsMachine.path_CAD.split('/')[-2]
+    if flag_wall_limit:
+        name_CAD = '2D_wall_mesh'
+        name_material = name_wall_material
+    #plot and save los
+    utility_functions.plot_image(np.squeeze(mask_noeud).T, extent = extent_RZ, origin = 'lower')
+    plt.savefig(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'nlos' + str(n_los)+'rays'+str(pixel_samples)+'view los.png')
+    plt.close()
+    dict_spectro = dict(R1 = R1, Z1=Z1, grid_mask = grid_mask, extent_RZ = extent_RZ, R_wall = R_wall,  Z_wall= Z_wall, transfert_matrix = transfert_matrix, mask_pixel= mask_pixel, mask_noeud= mask_noeud,  pipelines= pipelines, cell_r = cell_r, cell_z= cell_z)
+    savemat(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+ str(n_los)+'rays'+str(pixel_samples)+'cherab_los.mat', dict_spectro)
+    return R1, Z1, grid_mask, extent_RZ, R_wall, Z_wall, transfert_matrix, mask_pixel, mask_noeud, pipelines, cell_r, cell_z
+

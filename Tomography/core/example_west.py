@@ -28,8 +28,10 @@ path_calibration = '/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibra
 # path for the limits of the vessel/ 3D model of the vessel. 
 # path_wall = '/compass/home/fevre/WESTCOMPASS_tomography/Tomography/ressources/COMPASS_RZ_vessel.mat'
 path_wall = '/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
+path_wall = 'Tomography/ressources/west_wall_ext_stl.npy'
 # path_CAD ='/Home/LF285735/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/20250429 full model.ccm'
-path_CAD = 'Tomography/ressources/2025_12_03_super_cropped/'
+# path_CAD = 'Tomography/ressources/2025_12_10_cropped/'
+path_CAD = 'Tomography/ressources/2025_12_10_closed/'
 ######
 ###### raytracing parameters : parameters for the calculation of the geometry matrix
 machine = 'WEST'
@@ -37,18 +39,18 @@ symetry = 'toroidal' #hypothesis on the emissivity uniformity. Can be set to 'to
 # parameters for dimension of the 2D plane
 phi_grid = None #toroidal angle (in degrees)
 n_polar = None # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
-dr_grid = 20e-3 #radius step of 2D grid
-dz_grid = 20e-3 #height step of 2D grid
+dr_grid = 10e-3 #radius step of 2D grid
+dz_grid = 10e-3 #height step of 2D grid
 extra_steps = None
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
 grid_precision_multiplier = None
 variant_mag=None
 revision = None
 dict_vid = {'sigma' : 0, 'median' : 0}
-variant_CAD = 'Default' # parameters for the variant of the 3D model
+variant_CAD = None # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
-# name_material = "absorbing_surface"
-name_material =     'Tomography/ressources/components_west'
+name_material = "absorbing_surface"
+# name_material =     'Tomography/ressources/components_west'
 c = 3
 
 
@@ -86,7 +88,7 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 # parameter for the number of the shot
 nshot_grid =61357
 nshot =None
-path_vid = '/Home/LF285735/Zone_Travail/Python/CHERAB/videos/west/61357 avant XPR _S0001/61357 avant XPR _S0001'
+path_vid = '/Home/LF285735/Zone_Travail/Python/CHERAB/videos/west/61357 transition XPR_S0001/61357 transition XPR_S0001'
  
 
 

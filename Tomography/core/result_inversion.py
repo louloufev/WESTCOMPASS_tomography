@@ -17,10 +17,21 @@ from scipy.io import loadmat, savemat
 
 from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, reconstruct_2D_image, inverse_vid_from_class
 def get_name(string):
-    if string:
-        return os.path.splitext(os.path.basename(string))[0]
+    if isinstance(string, str): 
+        if os.path.splitext(os.path.basename(string))[0]:
+            return os.path.splitext(os.path.basename(string))[0]
+
+        else:
+            try:
+                return string.split('/')[-2]
+            except:
+                return ''
+    elif string is None:
+        return 'None'
     else:
-        return ''
+        raise(ValueError('Unreadable name' + str(string)))
+
+        
 
 @dataclass
 class Params:
@@ -665,8 +676,11 @@ class Inversion_results(TomographyResults):
         self.create_video(filename, array, orientation, Yaxis)
 
 
-    def create_synth_image(self, array):
-    # nodes array is supposed to be in the norm for plotting 2D images (vertical dimension first dimension, from up to bottom)
+    def create_synth_image(self, array = None):
+        # nodes array is supposed to be in the norm for plotting 2D images (vertical dimension first dimension, from up to bottom)
+        if array is None:
+            array = np.ones(np.squeeze(self.mask_noeud).T.shape)
+
         if self._prep_inversion:
             if self.inversion_parameter != self.ParamsVid.inversion_parameter:
                 self.prep_inversion()
