@@ -1,20 +1,14 @@
-from Tomography.core.fonction_tomo_test import full_inversion_toroidal
+import sys
+sys.path.append('/Home/LF285735/Documents/Python/WESTCOMPASS_tomography')
+from Tomography.core import result_inversion
 
 
+# #for easy debugging
+# import Tomography
+# importlib.reload(Tomography.core.fonction_tomo_test)
 
-import importlib
-import numpy as np
-import matplotlib.pyplot as plt
-import pdb
-from Tomography.core import utility_functions, result_inversion
-
-
-#for easy debugging
-import Tomography
-importlib.reload(Tomography.core.fonction_tomo_test)
-
-#import relevant function from tomography package
-from Tomography.core.fonction_tomo_test import full_inversion_toroidal
+# #import relevant function from tomography package
+# from Tomography.core.fonction_tomo_test import full_inversion_toroidal
 
 ###### path parameters to look for calibrations, 3D models, etc..
 
@@ -89,7 +83,6 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 nshot_grid =61357
 nshot =None
 path_vid = 'Tomography/ressources/61600 first XPR_S0001'
- 
 
 
 #####
@@ -127,100 +120,3 @@ ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
                                                     inversion_parameter = inversion_parameter,
                                                     c = c, 
                                                     class_name = 'ParamsVid')
-
-
-Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-import traceback
-i = 0
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_01'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_03'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_05'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_07'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_09'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-
-
-path_vid = 'Tomography/ressources/61600 second XPR_S0001'
-ParamsVid.path_vid = path_vid
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_01'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_01'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_03'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_05'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_07'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1
-try:
-    ParamsMachine.name_material =     'Tomography/ressources/components_west_09'
-    Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid) 
-except Exception as e:
-    print("An error occurred:")
-    traceback.print_exc()
-    print(f'failed{i}') 
-i = i+1

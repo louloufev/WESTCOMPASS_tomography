@@ -1,86 +1,39 @@
+# www.ladisk.si
+#
+# pyMRAW is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, version 3 of the License.
+#
+# pyMRAW is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with pyMRAW.  If not, see <http://www.gnu.org/licenses/>.
+"""
+This module is reads Photron MRAW image sequences.
 
-from numpy import savez_compressed
-import pdb
+Author: Jaka Javh (jaka.javh@fs.uni-lj.si), Janko Slavič (janko.slavic@fs.uni-lj.si) www.ladisk.si
+
+We developed this module while working on this publication:
+J. Javh, J. Slavič and M. Boltežar: The Subpixel Resolution of Optical-Flow-Based Modal Analysis,
+Mechanical Systems and Signal Processing, Vol. 88, p. 89–99, 2017
+ 
+If you find it useful, consider to cite us.
+"""
+
 import os
-
 from os import path
 import numpy as np
 import numba as nb
 import warnings
 import xmltodict
 
-
+__version__ = '0.32'
 
 SUPPORTED_FILE_FORMATS = ['mraw', 'tiff']
 SUPPORTED_EFFECTIVE_BIT_SIDE = ['lower', 'higher']
-
-
-
-def get_vid(path_vid, t_start, nshot = None):
-    #path_vid is the path to the .cihx file
-    import pyMRAW
-    name_path = get_full_name(path_vid)
-    images, data = pyMRAW.load_video(path_vid)
-    data['t_start'] = t_start
-    savez_compressed(name_path, images = images, data = data)
-    print(name_path)
-
-
-
-def get_vid_compatible(path_vid, t_start, nshot = None):
-    #path_vid is the path to the .cihx file
-    import pyMRAW
-    name_path = get_full_name(path_vid)
-    images, data = pyMRAW.load_video(path_vid)
-    startFrame = data['startFrame']
-    fps = data['Record Rate(fps)']
-    t_start = startFrame/fps
-    data['t_start'] = t_start
-    savez_compressed(name_path, images = images, t_start = t_start, fps = data['Record Rate(fps)'], image_dim_y = data['Image Height'], image_dim_x = data['Image Width'], NF = data['Total Frame'], skipFrame = data['skipFrame'], startFrame = data['startFrame'])
-    print(name_path)
-
-
-
-def get_vid_compatible_procyon(path_vid, t_start, nshot = None):
-    #path_vid is the path to the .cihx file
-    
-
-    name_path = get_full_name(path_vid)
-    images, data = load_video(path_vid)
-    filename = os.path.splitext(os.path.basename(name_path))[0]
-    save_video_folder = '/ZONE_TRAVAIL/LF276573/Python/CHERAB/videos/west/' + filename + '/'
-    os.makedirs(save_video_folder, exist_ok=True)
-    data['t_start'] = t_start
-    savez_compressed(save_video_folder + filename + '.npz', images = images, t_start = t_start, fps = data['Record Rate(fps)'], image_dim_y = data['Image Height'], image_dim_x = data['Image Width'], NF = data['Total Frame'], skipFrame = data['skipFrame'])
-    print(name_path)
-
-
-def get_name(path):
-    path = path.split('/')
-    name = path[len(path)-1]
-    name_shortened = name.split('.')
-
-    name_shortened = name_shortened[0]
-
-
-    return name_shortened
-
-
-def get_full_name(path):
-    path = path.split('/')
-
-    name_file =  path[-1]
-    name_file = name_file.split(".")
-    name_file = name_file[:-1]
-    name_file ="/".join(name_file)
-    name_shortened = path[:-1]
-    name_shortened = "/".join(name_shortened)
-    name_full = name_shortened + '/' + name_file
-    return name_full
-
-# dict_save_parameters = dict(pixels = pixels,noeuds = noeuds,nb_noeuds_r = nb_noeuds_r,nb_noeuds_z = nb_noeuds_z,R_max_noeud = R_max_noeud,R_min_noeud = R_min_noeud,Z_max_noeud = Z_max_noeud,Z_min_noeud = Z_min_noeud,R_noeud = R_noeud,Z_noeud = Z_noeud,mask_pixel = mask_pixel,mask_noeud= mask_noeud)
-
-
 
 
 def get_cih(filename):
@@ -125,7 +78,6 @@ def get_cih(filename):
             'EffectiveBit Side': raw_cih_dict['cih']['imageDataInfo']['effectiveBit']['side'],
             'Color Bit': int(raw_cih_dict['cih']['imageDataInfo']['colorInfo']['bit']),
             'Comment Text': raw_cih_dict['cih']['basicInfo'].get('comment', ''),
-            'skipFrame' : int(raw_cih_dict['cih']['frameInfo']['skipFrame'])
         }
 
     else:
@@ -135,12 +87,12 @@ def get_cih(filename):
     ff = cih['File Format']
     if ff.lower() not in SUPPORTED_FILE_FORMATS:
         raise Exception('Unexpected File Format: {:g}.'.format(ff))
-    # bits = cih['Color Bit']
-    # if bits < 12:
-    #     warnings.warn('Not 12bit ({:g} bits)! clipped values?'.format(bits))
-    #             # - may cause overflow')
-    #             # 12-bit values are spaced over the 16bit resolution - in case of photron filming at 12bit
-    #             # this can be meanded by dividing images with //16
+    bits = cih['Color Bit']
+    if bits < 12:
+        warnings.warn('Not 12bit ({:g} bits)! clipped values?'.format(bits))
+                # - may cause overflow')
+                # 12-bit values are spaced over the 16bit resolution - in case of photron filming at 12bit
+                # this can be meanded by dividing images with //16
     if cih['EffectiveBit Depth'] != 12:
         warnings.warn('Not 12bit image!')
     ebs = cih['EffectiveBit Side']
@@ -148,11 +100,10 @@ def get_cih(filename):
         raise Exception('Unexpected EffectiveBit Side: {:g}'.format(ebs))
     if (cih['File Format'].lower() == 'mraw') & (cih['Color Bit'] not in [8, 12, 16]):
         raise Exception('pyMRAW only works for 8-bit, 12-bit and 16-bit files!')
-    # if cih['Original Total Frame'] > cih['Total Frame']:
-    #     warnings.warn('Clipped footage! (Total frame: {}, Original total frame: {})'.format(cih['Total Frame'], cih['Original Total Frame'] ))
+    if cih['Original Total Frame'] > cih['Total Frame']:
+        warnings.warn('Clipped footage! (Total frame: {}, Original total frame: {})'.format(cih['Total Frame'], cih['Original Total Frame'] ))
 
     return cih
-
 
 
 def load_images(mraw, h, w, N, bit=16, roll_axis=True):
@@ -174,7 +125,7 @@ def load_images(mraw, h, w, N, bit=16, roll_axis=True):
     elif int(bit) == 8:
         images = np.memmap(mraw, dtype=np.uint8, mode='r', shape=(N, h, w))
     elif int(bit) == 12:
-        # warnings.warn("12bit images will be loaded into memory!")
+        warnings.warn("12bit images will be loaded into memory!")
         #images = _read_uint12_video(mraw, (N, h, w))
         images = _read_uint12_video_prec(mraw, (N, h, w))
     else:

@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.io import loadmat, savemat
-from scipy.sparse import csr_matrix, save_npz, csc_matrix, load_npz, isspmatrix
+from scipy.sparse import csr_matrix, save_npz, csc_matrix, load_npz
 from matplotlib import pyplot as plt
 from raysect.primitive import import_stl, import_obj, Box, import_ply
 from raysect.optical import World, Node, translate, rotate, ConstantSF, Point3D, rotate_z, Vector3D
@@ -19,9 +19,7 @@ from cherab.tools.inversions import invert_regularised_nnls
 from tomotok.core.derivative import compute_aniso_dmats
 from tomotok.core.geometry import RegularGrid
 from scipy.interpolate import RegularGridInterpolator
-import subprocess
 import pdb
-import pickle
 import sys
 import time
 import importlib
@@ -925,66 +923,6 @@ def get_derivative_matrix(inversion_method, R_noeud, Z_noeud, magflux):
     return derivative_matrix
     
 
-def serialize_data(data):
-    """Serializes various data types into a pickle-compatible format."""
-    if isspmatrix(data):  # Handle sparse matrices
-        return {"type": "sparse", "data": pickle.dumps(data)}
-    elif isinstance(data, np.ndarray):  # Handle NumPy arrays
-        return {"type": "ndarray", "data": data}
-    elif isinstance(data, (float, int, str)):  # Handle floats, ints, and strings
-        return {"type": "primitive", "data": data}
-    elif isinstance(data, list):
-        return {"type": "list", "data": data}
-    elif isinstance(data, dict):
-        return {"type": "dict", "data": data}
-    else:
-        raise ValueError(f"Unsupported data type: {type(data)}")
-def deserialize_data(data):
-    if data["type"] == "sparse":
-        return pickle.loads(data["data"])
-    elif data["type"] == "ndarray":
-        return data["data"]
-    elif data["type"] == "primitive":
-        return data["data"]
-    elif data["type"] == "list":
-        return data["data"]
-    elif data["type"] == "dict":
-        return data["data"]
-    else:
-        raise ValueError(f"Unsupported data type: {data['type']}")
-
-def call_module2_function(func_name, *args):
-    serialized_args = [serialize_data(arg) for arg in args]
-    input_data = {"func_name": func_name, "args": serialized_args}
-    print(sys.version)
-    # Debug: Check the size of serialized data
-    serialized_input = pickle.dumps(input_data)
-    print("Serialized Input Data Size:", len(serialized_input))
-    # print(pickle.loads(serialized_input))
-    # command = ["mamba", "run", "-n", "sparse_env", "python", "inversion_module.py"]
-    command = ["bash", "-c", "source activate python-3.11 && python inversion_module.py"]
-    result = subprocess.run(
-        command,
-        input=serialized_input,  # Pass serialized data as binary input
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    # result = subprocess.run(
-    #     command,
-    #     input=serialized_input,  # Pass serialized data as binary input
-    #     stdout=None,
-    #     stderr=None,
-    # )
-    # if result.stderr:
-    #     raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
-    # else:
-    #     print("Subprocess completed successfully or stderr not captured.")
-
-    if result.returncode != 0:
-        raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
-
-    return pickle.loads(result.stdout)
-    
 
 def reduce_camera_precision(camera, mask, vid, decimation =1):
     decimation = decimation or 1
@@ -1426,71 +1364,6 @@ def load_results_inversion(loading_folder, name_inversion_results):
 
 
 
-def call_function_in_environment(function_name, environment_name, *args):
-    # Serialize the arguments and keyword arguments
-    serialized_args = pickle.dumps(args)
-
-    # Construct the command to call the function in the specified environment
-    command = [environment_name, '-c', f'import pickle; {function_name}(pickle.loads({serialized_args!r}), pickle.loads({serialized_kwargs!r}))']
-
-    # Run the command using subprocess
-    result = subprocess.run(command, capture_output=True, text=True, shell=True)
-
-    # Check for errors
-    if result.returncode != 0:
-        print(f"Error: {result.stderr}")
-        return None
-
-    # Return the output of the function
-    return result.stdout.strip()
-
-def call_module_function_in_environment(module_name, function_name, environment_name, *args):
-    # Serialize the arguments and keyword arguments
-    
-    serialized_args = [serialize_data(arg) for arg in args]
-    input_data = {"func_name": function_name, "args": serialized_args}
-    print(sys.version)
-    # Debug: Check the size of serialized data
-    serialized_input = pickle.dumps(input_data)
-    print("Serialized Input Data Size:", len(serialized_input))
-    # print(pickle.loads(serialized_input))
-    # command = ["mamba", "run", "-n", "sparse_env", "python", "inversion_module.py"]
-    command = ["bash", "-c", f"source activate {environment_name} && python {module_name}.py"]
-    result = subprocess.run(
-        command,
-        input=serialized_input,  # Pass serialized data as binary input
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    # result = subprocess.run(
-    #     command,
-    #     input=serialized_input,  # Pass serialized data as binary input
-    #     stdout=None,
-    #     stderr=None,
-    # )
-    # if result.stderr:
-    #     raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
-    # else:
-    #     print("Subprocess completed successfully or stderr not captured.")
-
-    if result.returncode != 0:
-        raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
-
-    return pickle.loads(result.stdout)
-    # # Construct the command to call the function in the specified environment
-    # command = [environment_name, '-c', f'import pickle; import {module_name}; {function_name}(pickle.loads({serialized_args!r}), pickle.loads({serialized_kwargs!r}))']
-    # pdb.set_trace()
-    # # Run the command using subprocess
-    # result = subprocess.run(command, capture_output=True, text=True, shell=True)
-
-    # # Check for errors
-    # if result.returncode != 0:
-    #     print(f"Error: {result.stderr}")
-    #     return None
-
-    # # Return the output of the function
-    # return result.stdout.strip()
-
 
 class separatrix_map:
     #class for easier plotting of magnetic map on WEST
@@ -1671,7 +1544,7 @@ def remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z, 
     
 
     try:
-        magflux = call_module_function_in_environment('west_functions','get_equilibrium', 'python-3.11', nshot)
+        magflux = utility_functions.call_module_function_in_environment('west_functions','get_equilibrium', 'python-3.11', nshot)
 
         r = magflux.interp2D.r
         z = magflux.interp2D.z

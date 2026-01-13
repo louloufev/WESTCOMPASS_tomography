@@ -31,7 +31,6 @@ def get_name(string):
     else:
         raise(ValueError('Unreadable name' + str(string)))
 
-        
 
 @dataclass
 class Params:
@@ -78,6 +77,9 @@ class Params:
 
         return sep.join(filter(None, [prefix] + parts)) + f"{ext}"
 
+
+    def to_dict(self):
+        return asdict(self)
 
 @dataclass
 class ParamsVid(Params):
@@ -391,10 +393,12 @@ class Inversion_results(TomographyResults):
     required_keys = []
     @property
     def filename(self):
-        return (self.root_folder + '/' + self.ParamsMachine.filename + '/' + self.ParamsGrid.filename + '/' + self.ParamsVid.filename)
+        filename = (self.root_folder + '/' + self.ParamsMachine.filename + '/' + self.ParamsGrid.filename + '/' + self.ParamsVid.filename)
+        filename = filename if filename.endswith(".h5") else filename + ".h5"
+        return filename
 
-    def __init__(self, data: dict = None,ParamsMachine = ParamsMachine(), ParamsGrid = ParamsGrid(), ParamsVid= ParamsVid()):
-        self.root_folder = None
+    def __init__(self, data: dict = None,ParamsMachine = ParamsMachine(), ParamsGrid = ParamsGrid(), ParamsVid= ParamsVid(), root_folder = None):
+        self.root_folder = root_folder
         self.ParamsMachine = ParamsMachine
         self.ParamsGrid = ParamsGrid
         self.ParamsVid = ParamsVid
@@ -417,7 +421,7 @@ class Inversion_results(TomographyResults):
 
     def load_transfert_matrix(self):
 
-        transfert_matrix = Transfert_Matrix(ParamsMachine = self.ParamsMachine, ParamsGrid = self.ParamsGrid)
+        transfert_matrix = Transfert_Matrix(root_folder = self.root_folder, ParamsMachine = self.ParamsMachine, ParamsGrid = self.ParamsGrid)
         try:
             return  transfert_matrix.load()
         except:
@@ -430,7 +434,9 @@ class Inversion_results(TomographyResults):
         if (self._Transfert_Matrix is None) or (type(self._Transfert_Matrix)) == str:
             transfert_matrix = self.load_transfert_matrix()
             self._Transfert_Matrix = transfert_matrix
-            print('successfully loaded Transfert Matrix')
+            if transfert_matrix is not None:
+                print('successfully loaded Transfert Matrix')
+            
         return self._Transfert_Matrix
 
     def prep_inversion(self):
@@ -697,8 +703,8 @@ class Transfert_Matrix(TomographyResults):
     required_keys = []
                     #  , "mask_noeud", "mask_pixel", "transfert_matrix", "noeuds", "pixels", "RZ_wall", "R_noeud", "Z_noeud"]
 
-    def __init__(self, data: dict = None, ParamsMachine = ParamsMachine(), ParamsGrid = ParamsGrid()):
-        self.root_folder = None
+    def __init__(self, data: dict = None, ParamsMachine = ParamsMachine(), ParamsGrid = ParamsGrid(), root_folder = None):
+        self.root_folder = root_folder
         self.ParamsMachine = ParamsMachine
         self.ParamsGrid = ParamsGrid
         super().__init__(data)
@@ -712,4 +718,17 @@ class Transfert_Matrix(TomographyResults):
         #     self.ParamsGrid = ParamsGrid
     @property
     def filename(self):
-        return (self.root_folder + '/' + self.ParamsMachine.filename + '/' + self.ParamsGrid.filename)
+        filename = (self.root_folder + '/' + self.ParamsMachine.filename + '/' + self.ParamsGrid.filename)
+        filename = filename if filename.endswith(".h5") else filename + ".h5"
+        return filename
+
+
+
+
+def override_params(base, **overrides):
+    """
+    Create a new dataclass with overridden fields.
+    """
+    data = asdict(base)
+    data.update(overrides)
+    return type(base)(**data)

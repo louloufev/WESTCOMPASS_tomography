@@ -7,6 +7,9 @@ import imageio
 from .inversion_module import reconstruct_2D_image
 from typing import Optional, Tuple
 import re
+from scipy.sparse import isspmatrix
+import pickle
+import subprocess
 
 def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, vmin = None, title = '', cmap = 'viridis'):
     path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
@@ -71,7 +74,6 @@ def plot_image(image_raw, xlabel = None, ylabel = None, percentile_inf = None, p
     plt.colorbar()
     plt.show(block = False)
     return fig, ax
-
 
 import tkinter as tk
 from tkinter import filedialog
@@ -952,8 +954,9 @@ def get_vid(ParamsVid):
     if path_vid:
         
         try:
-            import pyMRAW
-            images, data = pyMRAW.load_video(path_vid + '.chix')
+
+            images, data = call_module_function_in_environment('pyMRAW', 'load_video', 'pyMRAW_env', path_vid + '.cihx')  
+            pdb.set_trace()
             fps = data['Record Rate(fps)']
             image_dim_y = data['Image Height']
             image_dim_x = data['Image Width']
@@ -1161,16 +1164,18 @@ def draw_polygon(fig=None, ax=None):
     # Create figure/axes if not supplied
     if fig is None or ax is None:
         fig, ax = plt.subplots()
-        ax.set_title("Click to add vertices. Right-click or Enter to finish.")
-
+    ax.set_title("Click to add vertices. Right-click or Enter to finish.")
+    finished = False
     points = []
     line, = ax.plot([], [], marker='o')
 
     def onclick(event):
+        nonlocal finished
+        if event.inaxes != ax:
+            return
         # End drawing on right-click
         if event.button == 3:
-            fig.canvas.mpl_disconnect(cid_click)
-            fig.canvas.mpl_disconnect(cid_key)
+            finished = True
             return
 
         # Accept only valid plot clicks
@@ -1182,15 +1187,21 @@ def draw_polygon(fig=None, ax=None):
 
     # End drawing on Enter key
     def onkey(event):
+        nonlocal finished
         if event.key == "enter":
-            fig.canvas.mpl_disconnect(cid_click)
-            fig.canvas.mpl_disconnect(cid_key)
+            finished = True
+
 
     cid_click = fig.canvas.mpl_connect('button_press_event', onclick)
     cid_key   = fig.canvas.mpl_connect('key_press_event', onkey)
 
-    plt.show()
+    plt.show(block = False)
 
+    while not finished:
+        plt.pause(0.05)
+    
+    fig.canvas.mpl_disconnect(cid_click)
+    fig.canvas.mpl_disconnect(cid_key)
     return points
 
 
@@ -1205,7 +1216,7 @@ def write_arrays_in_txt_file(filename, data):
 def clean_points_inside_poly(vertices, points):
     #remove points inside the polygon indicated by vertices
     # vertices : list of points [(x1, y1), (x2, y2),...]
-    #  points : array 
+    #  points : array of 2D points, dimension (N, 2)
     from matplotlib.path import Path
     poly = Path(vertices)
     mask = poly.contains_points(points)
@@ -1248,3 +1259,145 @@ def extract_after_keyword(s, keyword):
     pattern = rf"{keyword}\s*([-+]?\d*\.?\d+)"
     m = re.search(pattern, s)
     return float(m.group(1)) if m else None
+
+
+
+
+def call_module_function_in_environment(module_name, function_name, environment_name, *args):
+    # Serialize the arguments and keyword arguments
+    
+    serialized_args = [serialize_data(arg) for arg in args]
+    
+    input_data = {"func_name": function_name, "args": serialized_args}
+    # Debug: Check the size of serialized data
+    serialized_input = pickle.dumps(input_data)
+    print("Serialized Input Data Size:", len(serialized_input))
+    # print(pickle.loads(serialized_input))
+    # command = ["mamba", "run", "-n", "sparse_env", "python", "inversion_module.py"]
+    command = ["bash", "-c", f"source activate {environment_name} && python {module_name}.py"]
+    result = subprocess.run(
+        command,
+        input=serialized_input,  # Pass serialized data as binary input
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    # result = subprocess.run(
+    #     command,
+    #     input=serialized_input,  # Pass serialized data as binary input
+    #     stdout=None,
+    #     stderr=None,
+    # )
+    # if result.stderr:
+    #     raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
+    # else:
+    #     print("Subprocess completed successfully or stderr not captured.")
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
+
+    return pickle.loads(result.stdout)
+    # # Construct the command to call the function in the specified environment
+    # command = [environment_name, '-c', f'import pickle; import {module_name}; {function_name}(pickle.loads({serialized_args!r}), pickle.loads({serialized_kwargs!r}))']
+    # pdb.set_trace()
+    # # Run the command using subprocess
+    # result = subprocess.run(command, capture_output=True, text=True, shell=True)
+
+    # # Check for errors
+    # if result.returncode != 0:
+    #     print(f"Error: {result.stderr}")
+    #     return None
+
+    # # Return the output of the function
+    # return result.stdout.strip()
+
+
+
+
+
+def call_function_in_environment(function_name, environment_name, *args):
+    # Serialize the arguments and keyword arguments
+    serialized_args = pickle.dumps(args)
+
+    # Construct the command to call the function in the specified environment
+    command = [environment_name, '-c', f'import pickle; {function_name}(pickle.loads({serialized_args!r}), pickle.loads({serialized_kwargs!r}))']
+
+    # Run the command using subprocess
+    result = subprocess.run(command, capture_output=True, text=True, shell=True)
+
+    # Check for errors
+    if result.returncode != 0:
+        print(f"Error: {result.stderr}")
+        return None
+
+    # Return the output of the function
+    return result.stdout.strip()
+
+
+def call_module2_function(func_name, *args):
+    serialized_args = [serialize_data(arg) for arg in args]
+    input_data = {"func_name": func_name, "args": serialized_args}
+    # Debug: Check the size of serialized data
+    serialized_input = pickle.dumps(input_data)
+    print("Serialized Input Data Size:", len(serialized_input))
+    # print(pickle.loads(serialized_input))
+    # command = ["mamba", "run", "-n", "sparse_env", "python", "inversion_module.py"]
+    command = ["bash", "-c", "source activate python-3.11 && python inversion_module.py"]
+    result = subprocess.run(
+        command,
+        input=serialized_input,  # Pass serialized data as binary input
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    # result = subprocess.run(
+    #     command,
+    #     input=serialized_input,  # Pass serialized data as binary input
+    #     stdout=None,
+    #     stderr=None,
+    # )
+    # if result.stderr:
+    #     raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
+    # else:
+    #     print("Subprocess completed successfully or stderr not captured.")
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Error in subprocess: {result.stderr.decode().strip()}")
+
+    return pickle.loads(result.stdout)
+    
+
+
+
+def serialize_data(data):
+    """Serializes various data types into a pickle-compatible format."""
+    if isspmatrix(data):  # Handle sparse matrices
+        return {"type": "sparse", "data": pickle.dumps(data)}
+    elif isinstance(data, np.ndarray):  # Handle NumPy arrays
+        return {"type": "ndarray", "data": data}
+    elif isinstance(data, (float, int, str)):  # Handle floats, ints, and strings
+        return {"type": "primitive", "data": data}
+    elif isinstance(data, list):
+        return {"type": "list", "data": data}
+    elif isinstance(data, dict):
+        return {"type": "dict", "data": data}
+    else:
+        raise ValueError(f"Unsupported data type: {type(data)}")
+def deserialize_data(data):
+    if data["type"] == "sparse":
+        return pickle.loads(data["data"])
+    elif data["type"] == "ndarray":
+        return data["data"]
+    elif data["type"] == "primitive":
+        return data["data"]
+    elif data["type"] == "list":
+        return data["data"]
+    elif data["type"] == "dict":
+        return data["data"]
+    else:
+        raise ValueError(f"Unsupported data type: {data['type']}")
+    
+
+def get_wall_west():
+    
+    path_wall = '/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/ressources/RZ_wall_stl.npy'
+    RZ = np.load(path_wall)
+    return RZ
