@@ -6,8 +6,13 @@ COMPASS/
 WEST/
 machine_COMPASS/
 machine_WEST/
-mat_saves
-Tomography/ressources
+mat_saves/
+Tomography/ressources/
 inversion/
 raytracing/
-
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.nbc
+*.nbi
