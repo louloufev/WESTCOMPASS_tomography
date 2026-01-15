@@ -284,6 +284,7 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
     realcam.min_wavelength = 640
     realcam.max_wavelength = realcam.min_wavelength +1
     realcam.render_engine.processes = 32
+    
     try:
         Transfert_Matrix = result_inversion.Transfert_Matrix({'root_folder' : main_folder_processing}, ParamsMachine = ParamsMachine, ParamsGrid = ParamsGrid)
         Transfert_Matrix = Transfert_Matrix.load()
@@ -866,7 +867,7 @@ def FL_lookup(eq, phi_grid, R_noeud, Z_noeud, phi_min, phi_max, IntegrationDista
         Z_fl = np.concatenate((np.flip(field_line_down[i].Z, axis=0), field_line_up[i].Z))
         phi_fl = np.concatenate((np.flip(field_line_down[i].phi, axis=0), field_line_up[i].phi))
         if not np.array_equiv(phi_fl, phi_mem):
-            Raise("integration on toroidal angle incorrectly borned")
+            raise ValueError("integration on toroidal angle incorrectly borned")
         chord = eq.coordinates(R = R_fl, Z = Z_fl, phi = phi_fl)
         #wall_mask = eq.in_first_wall(chord)
         #R_fl[np.invert(wall_mask)] = np.NaN

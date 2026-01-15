@@ -369,8 +369,3 @@ def show_UI():
     anim = animation.FuncAnimation(fig, animate, frames=N, interval=1, blit=True)
     plt.show()
 
-
-if __name__ == '__main__':
-    show_UI()
-    #a = get_cih('data/sample_60k_16bit.cih')
-    #print(a)

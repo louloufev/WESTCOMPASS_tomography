@@ -10,6 +10,15 @@ import re
 from scipy.sparse import isspmatrix
 import pickle
 import subprocess
+import xarray as xr
+import json
+import re
+
+campaign_metadata_path = "/Home/LF285735/Documents/Python/shot_camera_metadata.h5"
+
+campaign_metadata = xr.open_dataset(campaign_metadata_path)
+
+path_to_env = "/Home/LF285735/.conda/envs/"
 
 def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, vmin = None, title = '', cmap = 'viridis'):
     path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
@@ -955,13 +964,23 @@ def get_vid(ParamsVid):
         
         try:
 
-            images, data = call_module_function_in_environment('pyMRAW', 'load_video', 'pyMRAW_env', path_vid + '.cihx')  
-            pdb.set_trace()
+            images = load_pyMRAW_array(path_vid)
+            data = read_metadata_pyMRAW(path_vid)
             fps = data['Record Rate(fps)']
             image_dim_y = data['Image Height']
             image_dim_x = data['Image Width']
             NF = data['Total Frame']
-        except:
+            try:
+                t_start = campaign_metadata.sel(nshots = nshot).t_start.values
+            except:
+                print("no shot number indicated, trying to find shot number in path name")
+                nshot = int(first_5_consecutive_digits(os.path.basename(path_vid)))
+                print("shot number {} found".format(str(nshot)))
+                t_start = campaign_metadata.sel(nshots = nshot).t_start.values
+            
+        except Exception as e:
+            print("failed to load MRAW")
+            print(e)
             outdata = np.load(path_vid + '.npz', allow_pickle=True)
             images = outdata["images"]
             # data = outdata["data"]
@@ -993,11 +1012,14 @@ def get_vid(ParamsVid):
             add_variable_to_npz(path_vid + '.npz', 't_start', t_start)
         if time_input is not None:
             frame_input = [int((time_input[0]-t_start)/fps),int((time_input[1]-t_start)/fps)]
+
         if frame_input is not None:
             images = images[frame_input[0]:frame_input[1], :, :]
         else:
             frame_input = [0, NF-1]
+    
         t0 = t_start+frame_input[0]/fps
+
     else:
         RIS_number = 3
         from . import RIS
@@ -1401,3 +1423,96 @@ def get_wall_west():
     path_wall = '/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/ressources/RZ_wall_stl.npy'
     RZ = np.load(path_wall)
     return RZ
+
+
+def read_metadata_pyMRAW(filename):
+    import subprocess
+    import json
+    filename = filename if filename.endswith(".cihx") else filename + ".cihx"
+    print(filename)
+    cmd = [
+        path_to_env + "pyMRAW_env/bin/python",
+        "/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/core/read_mraw_metadata.py",
+        filename
+    ]
+
+    result = subprocess.check_output(cmd, text=True)
+    metadata = json.loads(result)
+
+    print(metadata)
+    return metadata
+
+def load_pyMRAW_array(filename):
+    import tempfile
+    filename = filename if filename.endswith(".cihx") else filename + ".cihx"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "frames.npy")
+        print(out_path)
+        subprocess.check_call([
+            path_to_env + "pyMRAW_env/bin/python",
+            "/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/core/load_vid_pyMRAW.py",
+            filename,
+            out_path
+        ])
+
+        frames = np.load(out_path)
+        return frames   # fully loaded into RAM
+    
+def read_vid_metadata(ParamsMachine, ParamsGrid):
+    if ParamsMachine.machine == 'COMPASS':
+        RIS_number = 3
+        from . import RIS
+        try:
+            out = RIS.get_info(ParamsGrid.nshot, RIS_number)    
+            dict_video = RIS.get_info(ParamsGrid.nshot, RIS = RIS_number, origin = 'RAW')
+        except:
+            RIS_number = 4
+            dict_video = RIS.get_info(ParamsGrid.nshot, RIS = RIS_number, origin = 'RAW')
+    elif ParamsMachine.machine == 'WEST':
+        dict_video = read_metadata_pyMRAW(ParamsGrid.path_vid)
+        fps = dict_video['Record Rate(fps)']
+        image_dim_y = dict_video['Image Height']
+        image_dim_x = dict_video['Image Width']
+        NF = dict_video['Total Frame']
+        dict_video['Image Shape'] = (image_dim_y, image_dim_x)
+
+
+
+def read_metadata_pyMRAW(filename):
+    filename = filename if filename.endswith(".cihx") else filename + ".cihx"
+    print(filename)
+    cmd = [
+        path_to_env + "pyMRAW_env/bin/python",
+        "/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/core/read_mraw_metadata.py",
+        filename
+    ]
+
+    result = subprocess.check_output(cmd, text=True)
+    metadata = json.loads(result)
+
+    print(metadata)
+    return metadata
+
+
+def load_west_equilibrium(nshot):
+    proc = subprocess.Popen(
+        ['/Applications/software/mamba/envs/python-3.11/bin/python',"/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/core/get_west_equilibrium.py", str(nshot)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+
+    )
+
+    output, _ = proc.communicate()
+    # cmd = ['/Applications/software/mamba/envs/python-3.11/bin/python',
+    #     "/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/core/get_west_equilibrium.py",
+    #     str(nshot)
+    # ]
+    # result = subprocess.check_output(cmd, text=True)
+    magflux = pickle.loads(output)
+    return magflux
+
+
+
+def first_5_consecutive_digits(s: str) -> str:
+    match = re.search(r"\d{5}", s)
+    return match.group(0) if match else None

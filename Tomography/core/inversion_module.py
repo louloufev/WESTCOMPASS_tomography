@@ -671,3 +671,212 @@ def denoising(Inversion_results):
             inv_images_thresholded[:, i] = np.squeeze(inversion.thresholding(image[:, np.newaxis], c = c))
 
         return inv_images_thresholded.T
+    
+
+
+
+
+def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix, dict_vid= {}, inversion_parameter = {"rcond" : -1}):
+    """
+    Inputs :
+    images : 2D array
+    video data, in the #times, #pixels order (pixels grid has been previously flattened)
+    transfert_matrix : csr_matrix
+    geometry matrix, in the #pixels, #nodes order
+    inversion_method : string
+    name of the inversion method used
+    inversion_parameter : dictionnary, optionnal
+    dictionnary to add optionnal parameters for inversion
+    dict_vid : dictionnary, optionnal
+    dictionnary to add instructions on operations annex to the inversion (filtering, denoising, etc...)
+
+    
+    Outputs :
+
+    inv_images : 2D array
+    video inversed, in the #times, #nodes order 
+    inv_normed : 2D array
+    video inversed and normalized, in the #times, #nodes order 
+    inv_images_thresholded :2D array
+    video inversed and denoized, in the #times, #nodes order  
+    inv_images_thresholded_normed : 2D array
+    video inversed and normalized and denoized, in the #times, #nodes order 
+    images_retrofit: 2D array
+    video reconstructed from nodes profile, in the #times, #pixels order 
+    transfert_matrix : csr_matrix 
+    geometry matrix, in the #pixels, #nodes order
+    """
+    
+    
+    
+    
+    from cherab.tools.inversions import invert_regularised_nnls
+    # images = images[:, None] #add a dimension for the computation to procede correctly
+    # transfert_matrix = transfert_matrix.todense()
+    # transfert_matrix[:, np.sum(transfert_matrix, 0)<1e-3] = 0
+    # transfert_matrix = csr_matrix(transfert_matrix)
+
+
+    if inversion_method == 'Bob':
+        from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
+        from tomotok.core.derivative import compute_aniso_dmats
+        from tomotok.core.geometry import RegularGrid
+ 
+        inversion = Bob()
+        simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
+        transfert_matrix = csr_matrix(transfert_matrix)
+        rcond = inversion_parameter.get('rcond')
+        solver_dict = {'rcond' : rcond}
+
+
+        path_inverse_matrix = folder_inverse_matrix
+        path_norm_matrix = folder_inverse_matrix + 'norm'
+        try:
+            inversion.load_decomposition(path_inverse_matrix)
+            print('successfully loaded inverse matrix')
+        except:
+            inversion.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
+            inversion._normalise_wo_mat()
+        os.makedirs(os.path.dirname(path_inverse_matrix), exist_ok = True)
+        inversion.save_decomposition(path_inverse_matrix)
+
+        inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
+        images_retrofit = np.zeros_like(images)
+        for i in range(images.shape[0]):
+            inv_image = inv_images[:, i] 
+            images_retrofit[i, :] = transfert_matrix.dot(inv_image)
+        #put back the inversion in the times, nodes order
+        inv_images = inv_images.T 
+    elif inversion_method == 'SparseBob':
+        from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
+        from tomotok.core.derivative import compute_aniso_dmats
+        from tomotok.core.geometry import RegularGrid
+        inversion = SparseBob()
+        simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
+        transfert_matrix = csr_matrix(transfert_matrix)
+
+        path_inverse_matrix = folder_inverse_matrix
+        path_norm_matrix = folder_inverse_matrix + 'norm'
+        try:
+            inversion.load_decomposition(path_inverse_matrix)
+            print('successfully loaded inverse matrix')
+        except:
+            inversion.decompose(transfert_matrix, simple_base)
+            inversion._normalise_wo_mat()
+            os.makedirs(os.path.dirname(path_inverse_matrix), exist_ok = True)
+            inversion.save_decomposition(path_inverse_matrix)
+
+        inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
+        images_retrofit = np.zeros_like(images)
+        for i in range(images.shape[0]):
+            inv_image = inv_images[:, i] 
+            images_retrofit[i, :] = transfert_matrix.dot(inv_image)
+        #put back the inversion in the times, nodes order
+        inv_images = inv_images.T 
+    elif inversion_method == 'Mfr':
+        inversion = Mfr()
+        simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
+        inversion.decompose(transfert_matrix, simple_base, solver_kw= inversion_parameter)
+        inv_images = inversion(images, simple_base)
+        images_retrofit = transfert_matrix.dot(inv_image.T)
+    elif inversion_method == 'nnls':
+        try:
+            alpha = inversion_parameter["alpha"]
+        except:
+            alpha = 0.01
+
+        inv_images = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_normed = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_images_thresholded = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_images_thresholded_normed = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        images_retrofit = np.zeros_like(images)
+        for i in range(images.shape[0]):
+            image = images[i, :]
+            inv_image, norms = invert_regularised_nnls(transfert_matrix.toarray(), image, alpha=alpha, tikhonov_matrix=None)
+            inv_images[i, :] = inv_image
+            inv_normed[i, :] = inv_image
+            inv_images_thresholded[i, :] = inv_image
+            inv_images_thresholded_normed[i, :] = inv_image
+            images_retrofit[i, :] = transfert_matrix.dot(inv_image)  
+
+    elif inversion_method == 'SART':
+        from cherab.tools.inversions.sart import invert_sart
+
+        transfert_matrix = np.array(transfert_matrix)
+        inv_images = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_normed = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_images_thresholded = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        inv_images_thresholded_normed = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        images_retrofit = np.zeros_like(images)
+        for i in range(images.shape[0]):
+            image = images[i, :]
+            try:
+                inv_image, conv = invert_sart(transfert_matrix, np.squeeze(images[i, :]), max_iterations=100)
+            except:
+                inv_image = np.zeros(transfert_matrix.shape[1])
+            # pdb.set_trace()
+            inv_images[i, :] = inv_image
+            inv_normed[i, :] = inv_image
+            inv_images_thresholded[i, :] = inv_image
+            inv_images_thresholded_normed[i, :] = inv_image
+            images_retrofit[i, :] = transfert_matrix.dot(inv_image)  
+
+
+    elif inversion_method == 'OPENSART':
+        from cherab.tools.inversions.opencl.sart_opencl import SartOpencl
+
+        import pyopencl as cl
+        platform = cl.get_platforms()[0]
+        device = platform.get_devices()[0]
+
+        invert_sart = SartOpencl(transfert_matrix, device = device)
+        max_iterations = inversion_parameter.get('max_iterations')
+        max_iterations = max_iterations or 250
+        beta_laplace = inversion_parameter.get('beta_laplace')
+        beta_laplace = beta_laplace or 0.01
+        inv_images = np.zeros((images.shape[0], transfert_matrix.shape[1]))
+        images_retrofit = np.zeros_like(images)
+        for i in range(images.shape[0]):
+            image = images[i, :]
+        #     if i>0:
+        #         inv_image, residual = invert_sart(image, initial_guess=inv_images[i-1, :])
+        #     else:
+        #         inv_image, residual = invert_sart(image)
+            inv_image, residual = invert_sart(np.squeeze(image), beta_laplace = beta_laplace, max_iterations=max_iterations, conv_tol=0.0001)
+            inv_images[i, :] = inv_image
+            images_retrofit[i, :] = transfert_matrix.dot(inv_image)  
+                                          
+    else:
+        raise Exception('unrecognised inversion method')
+    # raise RuntimeError(f"Failed to deserialize input: {inv_image}")
+
+    return inv_images, images_retrofit
+        
+
+
+
+
+def prep_inversion_dataset(rt_ds, ParamsVid):
+    transfert_matrix = rt_ds.transfert_matrix.to_numpy()
+    pixel = rt_ds.pixel.to_numpy()
+    node =  rt_ds.node.to_numpy()
+    mask_node = rt_ds.mask_node
+    mask_pixel = rt_ds.mask_pixel
+    inversion_parameter = ParamsVid.inversion_parameter
+    if 'min_visibility_node' in inversion_parameter.keys():
+        
+        min_visibility_node = inversion_parameter.get('min_visibility_node')
+        sum_over_pix = np.sum(transfert_matrix, 0)
+        relevant_nodes = np.squeeze(np.array(sum_over_pix<min_visibility_node))
+        transfert_matrix[:, relevant_nodes] = 0
+        transfert_matrix, pixel, node, mask_pixel, mask_node = reindex_transfert_matrix(transfert_matrix, pixel, node, mask_pixel, mask_node)
+    if 'node_min_value' in inversion_parameter.keys():
+        node_min_value = inversion_parameter.get('node_min_value')
+        transfert_matrix[transfert_matrix<node_min_value] = 0
+        transfert_matrix, pixel, node, mask_pixel, mask_node = reindex_transfert_matrix(transfert_matrix, pixel, node, mask_pixel, mask_node)
+
+    
+    rows_node, cols_node = np.unravel_index(node, mask_node.shape)
+    rows_pixel, cols_pixel = np.unravel_index(pixel, mask_pixel.shape)
+
+    return transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel

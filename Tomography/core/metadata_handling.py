@@ -19,9 +19,10 @@ WRITE_ROOT = Path("/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/")
 # Subdirectories
 RT_SUBDIR = "raytracing"
 INV_SUBDIR = "inversion"
+INV_MATRIX_SUBDIR = "inversion_matrix"
 
 
-def find_existing(subdir: str, name: str) -> Path | None:
+def find_existing(subdir: str, name: str):
     # First check writable root (most recent data)
     path = WRITE_ROOT / subdir / name
     if path.exists():
@@ -48,7 +49,7 @@ def get_writable_root() -> Path:
 def ensure_write_dirs():
     (WRITE_ROOT / RT_SUBDIR).mkdir(parents=True, exist_ok=True)
     (WRITE_ROOT / INV_SUBDIR).mkdir(parents=True, exist_ok=True)
-
+    (WRITE_ROOT / INV_MATRIX_SUBDIR).mkdir(parents=True, exist_ok=True)
 
 
 def get_or_create_raytracing(ParamsMachine, ParamsGrid) -> Path:
@@ -71,6 +72,7 @@ def get_or_create_raytracing(ParamsMachine, ParamsGrid) -> Path:
         "stage": "raytracing",
         "hash": rt_hash,
         "storage": "linux",
+        "version": 1.0,
     })
 
     ds.to_zarr(path, mode="w")

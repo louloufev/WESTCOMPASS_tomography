@@ -9,6 +9,7 @@ machine_WEST/
 mat_saves/
 Tomography/ressources/
 inversion/
+inversion_matrix/
 raytracing/
 __pycache__/
 *.pyc

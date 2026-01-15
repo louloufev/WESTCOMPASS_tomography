@@ -45,7 +45,7 @@ variant_CAD = None # parameters for the variant of the 3D model
 # parameters to specify the model for the reflection of the walls
 name_material = "absorbing_surface"
 # name_material =     'Tomography/ressources/components_west'
-c = 3
+c = None
 
 
 ######

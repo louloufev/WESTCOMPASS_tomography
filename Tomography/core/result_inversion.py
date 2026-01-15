@@ -13,7 +13,7 @@ from dataclasses import dataclass, asdict, field, is_dataclass, fields
 import hashlib
 import matplotlib.pyplot as plt
 from scipy.io import loadmat, savemat
-
+from typing import Optional, Dict, Any
 
 from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, reconstruct_2D_image, inverse_vid_from_class
 def get_name(string):
@@ -34,8 +34,6 @@ def get_name(string):
 
 @dataclass
 class Params:
-    root_folder : str = None
-
 
     @property
     def filename(self):
@@ -98,11 +96,17 @@ class ParamsVid(Params):
             exclude = ("root_folder", "class_name")
             # 👆 add subclass-specific exclusions
         return super().to_filename(prefix, ext, sep, exclude, full= False)
+    
 @dataclass
 class ParamsGrid(Params):
+    dr_grid : float = field(metadata={"units": "m"})
+    dz_grid : float = field(metadata={"units": "m"})
     nshot : int = None
-    dr_grid : float = None
-    dz_grid : float = None
+    pixel_samples: int = field(
+        default=100,
+        metadata={"units": "-", "description": "Number of rays"}
+    )
+
     symetry : str = 'toroidal'
     variant_mag : str = None
     revision : int = None
@@ -111,7 +115,9 @@ class ParamsGrid(Params):
     n_polar : int = None
     crop_center : bool = None
     class_name : str = 'ParamsGrid'
+    t_grid : float = field(default=None, metadata={"units": "s", "description" : "time chosen for magnetic field lines for magnetic symmetry hypothesis"})
     extra_steps: int = None
+
     def __post_init__(self):
         if not self.symetry:
             pass
@@ -121,7 +127,6 @@ class ParamsGrid(Params):
             self.symetry = 'magnetic'
         else:
             raise(ValueError(f"{self.symetry} is not a supported emissivity hypothesis"))
-
     def to_filename(self, prefix="", ext="", sep="_", exclude=None):
         if exclude is None:
             exclude = ("root_folder", "class_name")
@@ -397,7 +402,7 @@ class Inversion_results(TomographyResults):
         filename = filename if filename.endswith(".h5") else filename + ".h5"
         return filename
 
-    def __init__(self, data: dict = None,ParamsMachine = ParamsMachine(), ParamsGrid = ParamsGrid(), ParamsVid= ParamsVid(), root_folder = None):
+    def __init__(self, data: dict = None,ParamsMachine = None, ParamsGrid = None, ParamsVid= None, root_folder = None):
         self.root_folder = root_folder
         self.ParamsMachine = ParamsMachine
         self.ParamsGrid = ParamsGrid
@@ -703,7 +708,7 @@ class Transfert_Matrix(TomographyResults):
     required_keys = []
                     #  , "mask_noeud", "mask_pixel", "transfert_matrix", "noeuds", "pixels", "RZ_wall", "R_noeud", "Z_noeud"]
 
-    def __init__(self, data: dict = None, ParamsMachine = ParamsMachine(), ParamsGrid = ParamsGrid(), root_folder = None):
+    def __init__(self, data: dict = None, ParamsMachine =None, ParamsGrid = None, root_folder = None):
         self.root_folder = root_folder
         self.ParamsMachine = ParamsMachine
         self.ParamsGrid = ParamsGrid
