@@ -1,20 +1,10 @@
-from Tomography.core.fonction_tomo_test import full_inversion_toroidal
-
-
-
 import importlib
 import numpy as np
 import matplotlib.pyplot as plt
 import pdb
 from Tomography.core import utility_functions, result_inversion
 
-
-#for easy debugging
-import Tomography
-importlib.reload(Tomography.core.fonction_tomo_test)
-
 #import relevant function from tomography package
-from Tomography.core.fonction_tomo_test import full_inversion_toroidal
 
 ###### path parameters to look for calibrations, 3D models, etc..
 
@@ -60,12 +50,12 @@ c = 3
 ###### inversion parameters : if a geometry matrix has already been measured with the previous parameters, will skip the raytracing and go straight into the inversion
 
 inversion_method = 'SparseBob' # see inversion_and_thresolding function in inversion_module module for list of choices 
-inversion_parameter = {'min_visibility_node': 0.01}
+inversion_parameter = {'min_visibility_node': 1}
 # inversion_parameter = {}
 
     # min_visibility_node : 
 
-decimation = 1 # int : used to average camera data into blocks of pixels; useful for large number of pixels. 
+decimation = None # int : used to average camera data into blocks of pixels; useful for large number of pixels. 
     # decimation = 1 : takes all pixels
     # decimation = 2 : takes the mean value of 2*2 pixel block, effectively dividing by 4 the number of pixels
 
@@ -90,6 +80,8 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 # parameter for the number of the shot
 
 nshot =15487
+nshot_grid = 15487
+t_grid = 1.060
 path_vid = None
 
 
@@ -114,6 +106,8 @@ ParamsGrid= result_inversion.ParamsGrid(dr_grid = dr_grid,
                                                     grid_precision_multiplier =grid_precision_multiplier,
                                                     n_polar = n_polar,
                                                     extra_steps = extra_steps,
+                                                    nshot = nshot_grid,
+                                                    t_grid = t_grid,
                                                     class_name = 'ParamsGrid')
 
 
@@ -128,4 +122,3 @@ ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
                                                     class_name = 'ParamsVid')
 
 
-Inversion_results = full_inversion_toroidal(ParamsMachine,ParamsGrid, ParamsVid)  

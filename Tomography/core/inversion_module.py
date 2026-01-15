@@ -543,7 +543,7 @@ def prep_inversion(transfert_matrix, mask_pixel, mask_noeud, pixels, noeuds, inv
 def reindex_transfert_matrix(transfert_matrix, pixels, noeuds, mask_pixel, mask_noeud):
     pixel_shape = mask_pixel.shape
     visible_pixel  = np.where(np.sum(transfert_matrix, 1))[0] #sum over nodes
-    visible_node = np.where(np.sum(transfert_matrix, 0))[1] #sum over pixels
+    visible_node = np.where(np.sum(transfert_matrix, 0))[0] #sum over pixels
     pixels  = np.squeeze(pixels)[visible_pixel] 
     noeuds  = np.squeeze(noeuds)[visible_node] 
     #save results
@@ -860,8 +860,10 @@ def prep_inversion_dataset(rt_ds, ParamsVid):
     transfert_matrix = rt_ds.transfert_matrix.to_numpy()
     pixel = rt_ds.pixel.to_numpy()
     node =  rt_ds.node.to_numpy()
-    mask_node = rt_ds.mask_node
-    mask_pixel = rt_ds.mask_pixel
+    mask_node = np.zeros(rt_ds.node_shape, dtype = bool)
+    mask_node[rt_ds.rows_node.to_numpy(), rt_ds.cols_node.to_numpy()] = True
+    mask_pixel = np.zeros(rt_ds.pixel_shape, dtype = bool)
+    mask_pixel[rt_ds.rows_pixel.to_numpy(), rt_ds.cols_pixel.to_numpy()] = True
     inversion_parameter = ParamsVid.inversion_parameter
     if 'min_visibility_node' in inversion_parameter.keys():
         

@@ -1,19 +1,28 @@
 from pathlib import Path
 import os
-from . import fonction_tomo 
 import json
 import hashlib
 import xarray as xr
-from . import result_inversion
+from Tomography.core import result_inversion, fonction_tomo
+
+if 'compass' in os.getcwd():
 # Read-only locations (NFS, Windows server, etc.)
-READ_ROOTS = [
-    Path("/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/"),
-    Path("/Home/LF285735/Documents/Python/mnt/nunki/camera_rapide/Images CCD rapide/Tomographic_Inversion"),   # NFS mount (read-only)
-]
+    READ_ROOTS = [
+        Path("/compass/home/fevre/WESTCOMPASS_tomography"),
+    ]
 
-# Single writable location (Linux local/server)
-WRITE_ROOT = Path("/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/")
+    # Single writable location (Linux local/server)
+    WRITE_ROOT = Path("/compass/home/fevre/WESTCOMPASS_tomography")
 
+else:
+    # Read-only locations (NFS, Windows server, etc.)
+    READ_ROOTS = [
+        Path("/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/"),
+        Path("/Home/LF285735/Documents/Python/mnt/nunki/camera_rapide/Images CCD rapide/Tomographic_Inversion"),   # NFS mount (read-only)
+    ]
+
+    # Single writable location (Linux local/server)
+    WRITE_ROOT = Path("/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/")
 
 
 # Subdirectories
@@ -98,7 +107,7 @@ def get_or_create_inversion(ParamsMachine, ParamsGrid, ParamsVid) -> Path:
 
     path = WRITE_ROOT / INV_SUBDIR / name
 
-    inv_ds = fonction_tomo.compute_inversion(ParamsMachine, ParamsGrid, ParamsVid)
+    inv_ds = fonction_tomo.compute_inversion(rt_ds, ParamsVid)
     inv_ds.attrs.update({
         "stage": "inversion",
         "hash": inv_hash,

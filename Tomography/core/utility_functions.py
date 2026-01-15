@@ -13,12 +13,28 @@ import subprocess
 import xarray as xr
 import json
 import re
-
-campaign_metadata_path = "/Home/LF285735/Documents/Python/shot_camera_metadata.h5"
-
-campaign_metadata = xr.open_dataset(campaign_metadata_path)
-
+try:
+    campaign_metadata_path = "/Home/LF285735/Documents/Python/shot_camera_metadata.h5"
+    campaign_metadata = xr.open_dataset(campaign_metadata_path)
+except:
+    print()
 path_to_env = "/Home/LF285735/.conda/envs/"
+
+
+def get_name(path):
+    path = path.split('/')
+    if path[-1]:
+        name = path[len(path)-1]
+    else:
+        name = path[len(path)-2]
+
+    name_shortened = name.split('.')
+
+    name_shortened = name_shortened[0]
+
+
+    return name_shortened
+
 
 def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = None, percentile_sup = None, extent = None, origin = 'upper', vmax = None, vmin = None, title = '', cmap = 'viridis'):
     path_wall = '/Home/LF276573/Zone_Travail/Python/CHERAB/models_and_calibration/models/west/WEST_wall.npy'
@@ -1461,13 +1477,13 @@ def load_pyMRAW_array(filename):
 def read_vid_metadata(ParamsMachine, ParamsGrid):
     if ParamsMachine.machine == 'COMPASS':
         RIS_number = 3
-        from . import RIS
+        from Tomography.core import RIS
         try:
-            out = RIS.get_info(ParamsGrid.nshot, RIS_number)    
-            dict_video = RIS.get_info(ParamsGrid.nshot, RIS = RIS_number, origin = 'RAW')
+            dict_video = RIS.get_info(ParamsGrid.nshot, RIS_number)    
         except:
             RIS_number = 4
-            dict_video = RIS.get_info(ParamsGrid.nshot, RIS = RIS_number, origin = 'RAW')
+            dict_video = RIS.get_info(ParamsGrid.nshot, RIS_number)  
+        dict_video['Image Shape'] = (dict_video.daq_parameters['FrameH'], dict_video.daq_parameters['FrameW'])
     elif ParamsMachine.machine == 'WEST':
         dict_video = read_metadata_pyMRAW(ParamsGrid.path_vid)
         fps = dict_video['Record Rate(fps)']
@@ -1475,7 +1491,7 @@ def read_vid_metadata(ParamsMachine, ParamsGrid):
         image_dim_x = dict_video['Image Width']
         NF = dict_video['Total Frame']
         dict_video['Image Shape'] = (image_dim_y, image_dim_x)
-
+    return dict_video
 
 
 def read_metadata_pyMRAW(filename):

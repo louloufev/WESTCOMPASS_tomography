@@ -268,7 +268,7 @@ def full_inversion_toroidal(ParamsMachine, ParamsGrid, ParamsVid):
         # if image_dim_y == mask_pixel.shape[0] and ParamsMachine.param_fit==None:
         #     vid = np.swapaxes(vid, 1,2)
     # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rotation.gif', num_frames=100, cmap='viridis')
-    
+    pdb.set_trace()
     realcam, mask_pixel, vid = fit_size_all(realcam, mask_pixel, vid, ParamsMachine.param_fit)
     # utility_functions.save_array_as_gif(vid, gif_path=main_folder_image + 'quickcheck_cam_after_rezizing.gif', num_frames=100, cmap='viridis')
 

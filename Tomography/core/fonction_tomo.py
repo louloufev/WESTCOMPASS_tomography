@@ -8,8 +8,11 @@ from scipy.io import loadmat, savemat
 from scipy.sparse import csr_matrix
 import os
 #custom imports
-from . import utility_functions, result_inversion, inversion_module
+from Tomography.core import utility_functions, result_inversion, inversion_module
+import sys
+sys.path.append('/compass/home/fevre/WESTCOMPASS_tomography/') #input directory path of the package
 from Tomography.ressources import components, paths
+
 import importlib
 importlib.reload(utility_functions)
 importlib.reload(inversion_module)
@@ -38,13 +41,11 @@ def compute_raytracing(ParamsMachine, ParamsGrid):
 
 
     realcam, fit_shape= get_camera(ParamsMachine, ParamsGrid, world)
-
     transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel, cell_r, cell_z = get_transfert_matrix(realcam, 
                                                                                                                                               world, 
                                                                                                                                               ParamsMachine, 
                                                                                                                                               ParamsGrid, 
                                                                                                                                               RZwall)
-
     rt_ds = xr.Dataset(
         data_vars={
             "transfert_matrix": (
@@ -64,10 +65,8 @@ def compute_raytracing(ParamsMachine, ParamsGrid):
             
         },
         attrs={
-            "image_shape": mask_pixel.shape,
+            "pixel_shape": mask_pixel.shape,
             "node_shape": mask_node.shape,
-            "mask_node" : mask_node,
-            "mask_pixel" : mask_pixel,
             "mask_description": "Camera mask applied",
             "cell_r" : cell_r,
             "cell_z" : cell_z,
@@ -91,7 +90,7 @@ def compute_inversion(rt_ds, ParamsVid):
         vid = np.swapaxes(vid, 1,2)
         vid = np.flip(vid, 1)
     if ParamsMachine.param_fit is not None:
-        vid = fit_size_vid(vid, rt_ds.fit_shape, decimation = ParamsMachine.decimation)
+        vid = fit_size_vid(vid, rt_ds.fit_shape)
 
     if ParamsMachine.decimation is not None and ParamsMachine.decimation != 1:
         vid = reduce_vid_precision(vid, decimation = ParamsMachine.decimation)
@@ -99,6 +98,7 @@ def compute_inversion(rt_ds, ParamsVid):
     transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel = inversion_module.prep_inversion_dataset(rt_ds, ParamsVid)
     folder_inverse_matrix = 'inversion_matrix/' + rt_ds.hash
     images = vid[:, mask_pixel]
+    pdb.set_trace()
     print("starting inversion")
     inv_images, images_retrofit = inversion_module.inversion(images, 
                                     transfert_matrix, 
@@ -125,13 +125,13 @@ def compute_inversion(rt_ds, ParamsVid):
             ),
         },
         coords={
-            "t_inv": ("t_inv", t_inv, {"units":'seconds'}),
+            "t_inv": ("t_inv", t_inv, {"units":'s', "long_name": "inversion time"}),
             "pixel": ("pixel", pixel),
             "node": ("node", node),
-            "row_pixel": ("pixel", rows_pixel),
-            "col_pixel": ("pixel", cols_pixel),
-            "row_node": ("node", rows_node),
-            "col_node": ("node", cols_node),
+            "rows_pixel": ("pixel", rows_pixel),
+            "cols_pixel": ("pixel", cols_pixel),
+            "rows_node": ("node", rows_node),
+            "cols_node": ("node", cols_node),
             
 
         },
@@ -141,8 +141,8 @@ def compute_inversion(rt_ds, ParamsVid):
             "mask_description": "Camera mask applied",
             "cell_r" : rt_ds.cell_r,
             "cell_z" : rt_ds.cell_z,
-            "node_image_orientation": "swapaxes, flip Y axis"
-            "pixel_image_orientation": "swapaxes"
+            "node_image_orientation": "swapaxes, flip Y axis",
+            "pixel_image_orientation": "swapaxes",
         }
     )
     return inv_ds
@@ -467,20 +467,7 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
 
         return R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud, phi_max, phi_min, RPHIZ
 
-    #get wall coordinates to get the cherab object
-    if ParamsGrid.symetry == 'magnetic': #overwrites wall with the one saved in pleque
-        t_pleque = ParamsGrid.t_grid #choose middle time of the inversion for time of equilibrium
-        t_pleque = t_pleque*1000 # converting in ms for pleque
-        import pleque.io.compass as plq
-        print("magnetic symmetry")
-        revision_mag = ParamsGrid.revision
-        revision_mag = revision_mag or 1
-        variant_mag =  ParamsGrid.variant_mag
-        variant_mag = variant_mag or ''
-        eq = plq.cdb(ParamsGrid.nshot, t_pleque, revision = revision_mag, variant = variant_mag)
-        RZwall = np.array([eq.first_wall.R,eq.first_wall.Z]).T
-        RZwall =RZwall[:-1, :] 
-        RZwall = RZwall[::-1]
+    
     start = time.time()
 
     wall_limit = axisymmetric_mesh_from_polygon(RZwall)
@@ -546,7 +533,17 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
 
    
     if ParamsGrid.symetry =='magnetic':
-                
+        
+        t_pleque = ParamsGrid.t_grid #choose middle time of the inversion for time of equilibrium
+        t_pleque = t_pleque*1000 # converting in ms for pleque
+        import pleque.io.compass as plq
+        print("magnetic symmetry")
+        revision_mag = ParamsGrid.revision
+        revision_mag = revision_mag or 1
+        variant_mag =  ParamsGrid.variant_mag
+        variant_mag = variant_mag or ''
+        eq = plq.cdb(ParamsGrid.nshot, t_pleque, revision = revision_mag, variant = variant_mag)
+
         start = time.time()
         
         FL_MATRIX, dPhirad, phi_min, phi_mem = FL_lookup(eq, phi_grid, cell_r, cell_z, phi_min, phi_max, 0.5e-3, 0.2)
@@ -685,7 +682,7 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
     print('shape reduced transfert matrix = ' + str(transfert_matrix.shape))
     rows_node, cols_node = np.unravel_index(node, mask_node.shape)
     rows_pixel, cols_pixel = np.unravel_index(pixel, mask_pixel.shape)
-    
+    pdb.set_trace()
     return transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel, cell_r, cell_z
 
 
@@ -856,6 +853,8 @@ def get_camera(ParamsMachine, ParamsGrid, world):
     mask_pixel = np.ascontiguousarray(mask_pixel)
     if ParamsMachine.param_fit is not None:
         metadata_vid = utility_functions.read_vid_metadata(ParamsMachine, ParamsGrid)
+        if ParamsMachine.machine == 'COMPASS':
+            metadata_vid['Image Shape'] = tuple(reversed(metadata_vid['Image Shape'])) #camera rotation to fit with raysect convention
         realcam, mask_pixel, fit_shape = fit_size_all(realcam, mask_pixel, metadata_vid, ParamsMachine.param_fit)
     else:
         fit_shape = None
@@ -915,20 +914,16 @@ def load_mask(path_calibration, path_mask):
                     mask_pixel = np.load(path_mask)
 
     else:
+    
+        name_mask = utility_functions.get_name(path_mask)
         try:
-            mask_pixel = calcam_camera['mask']
-            mask_pixel = np.invert(mask_pixel)
-            name_mask = 'calibration_calcam'
+            fmask = loadmat(path_mask)
+            mask_pixel = fmask["mask"]
         except:
-            name_mask = utility_functions.get_name(path_mask)
-            try:
-                fmask = loadmat(path_mask)
-                mask_pixel = fmask["mask"]
-            except:
-                mask_pixel = np.load(path_mask)
+            mask_pixel = np.load(path_mask)
     mask_pixel[np.isnan(mask_pixel)] = 0 #handle ill defined mask
     mask_pixel = np.abs(mask_pixel)# handle calcam convention, set all the non zero indices to positive for further process 
-    mask_pixel.dtype = bool
+    mask_pixel = mask_pixel.astype(bool)
     return mask_pixel, name_mask
 
 
@@ -1039,13 +1034,29 @@ def downsample_with_avg(matrix, block_size=4):
 
 def setup_raytracing_world(ParamsMachine, ParamsGrid):
     world = World()
+    if ParamsMachine.path_wall is not None:
+        try:
+            fwall = loadmat(ParamsMachine.path_wall)
+            RZwall = fwall['RZwall']
 
-    try:
-        fwall = loadmat(ParamsMachine.path_wall)
-        RZwall = fwall['RZwall']
+        except:
+            RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
+    else:
+    #get wall coordinates to get the cherab object
+    
+        t_pleque = ParamsGrid.t_grid #choose middle time of the inversion for time of equilibrium
+        t_pleque = t_pleque*1000 # converting in ms for pleque
+        import pleque.io.compass as plq
+        print("magnetic symmetry")
+        revision_mag = ParamsGrid.revision
+        revision_mag = revision_mag or 1
+        variant_mag =  ParamsGrid.variant_mag
+        variant_mag = variant_mag or ''
+        eq = plq.cdb(ParamsGrid.nshot, t_pleque, revision = revision_mag, variant = variant_mag)
+        RZwall = np.array([eq.first_wall.R,eq.first_wall.Z]).T
+        
 
-    except:
-        RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
+            
     #check that the last element is the neighbor of the first one and not the same one
     if(RZwall[0]==RZwall[-1]).all():
         RZwall = RZwall[:-1]
@@ -1058,7 +1069,7 @@ def setup_raytracing_world(ParamsMachine, ParamsGrid):
 
 
     full_wall = load_walls(ParamsMachine, world)
-    print('walls loaded, with components {}'.format(full_wall.name))
+    print('walls loaded, with components {}'.format([wall.name for wall in full_wall]))
     #calculate transfert matrix
     return world, RZwall
 
@@ -1197,28 +1208,6 @@ def load_components(namefile, features):
     
     return instances
 
-
-def fit_size_all(camera, mask, vid, param_fit = None):
-    if param_fit == 'mask':
-        target_shape = mask.shape
-    elif param_fit == 'camera':
-        target_shape = camera.pixel_directions.shape
-    elif param_fit == 'vid':
-        target_shape = vid.shape[1:]
-    else:
-        if mask.shape != camera.pixel_directions.shape or mask.shape !=vid.shape[1:]:
-            raise Exception('careful, discrepancy in elements shape')
-        else:
-            return camera, mask, vid
-    mask = resize_matrix(mask, target_shape)
-    pixel_directions = resize_matrix(camera.pixel_directions, target_shape)
-    pixel_origins = resize_matrix(camera.pixel_origins, target_shape)
-    camera = VectorCamera(pixel_origins, pixel_directions)
-    vidnew = np.zeros((vid.shape[0], target_shape[0], target_shape[1]))
-    for i in range(vid.shape[0]):
-        vidnew[i, :, :] = resize_matrix(vid[i, :, :], target_shape)
-    return camera, mask, vidnew 
-
 def fit_size_vid(vid, fit_shape):
     vidnew = np.zeros((vid.shape[0], fit_shape[0], fit_shape[1]))
     for i in range(vid.shape[0]):
@@ -1259,9 +1248,9 @@ def reconstruct_2d(
 
     # Infer coordinate names automatically
     if row_coord is None:
-        row_coord = f"row_{index_dim}"
+        row_coord = f"rows_{index_dim}"
     if col_coord is None:
-        col_coord = f"col_{index_dim}"
+        col_coord = f"cols_{index_dim}"
 
     if shape_attr is None:
         shape_attr = f"{index_dim}_shape"
@@ -1297,9 +1286,9 @@ class Image2DAccessor:
     ):
         ds = self._ds
 
-        row_coord = f"row_{index_dim}"
-        col_coord = f"col_{index_dim}"
-        shape_attr = f"mask_{index_dim}_shape"
+        row_coord = f"rows_{index_dim}"
+        col_coord = f"cols_{index_dim}"
+        shape_attr = f"{index_dim}_shape"
 
         if shape_attr not in ds.attrs:
             raise KeyError(f"Dataset missing attribute '{shape_attr}'")
@@ -1326,18 +1315,18 @@ class Image2DAccessor:
 
         if ax is None:
             fig, ax = plt.subplots()
-        orientation_attr = f"{index_dim}_image_orientation"
+        orientation_name = f"{index_dim}_image_orientation"
+        orientation_attr = self._ds.attrs[orientation_name]
         if orientation_attr == "swapaxes, flip Y axis":
-            im = np.swapaxes(im, 1, 2)
-            im = np.flip(im, 1)
+            img = np.swapaxes(img, 0,1)
+            img = np.flip(img, 0)
         elif orientation_attr == "swapaxes":
-            im = np.swapaxes(im, 1, 2)
-
+            img = np.swapaxes(img, 0, 1)
         if index_dim=="pixel":
             im = ax.imshow(img, origin="lower", **imshow_kwargs)
         elif index_dim=="node":
             extent = [np.min(self._ds.cell_r), np.max(self._ds.cell_r), np.min(self._ds.cell_z), np.max(self._ds.cell_z)] 
-            im = ax.imshow(img, origin="lower", extent = extent, **imshow_kwargs)
+            im = ax.imshow(img, extent = extent, **imshow_kwargs)
         ax.set_title(f"{var} (t={self._ds.sel(t_inv=t_inv, method = 'nearest').t_inv.values:.3f}s)")
 
         units = self._ds[var].attrs.get("units", "")
@@ -1345,5 +1334,63 @@ class Image2DAccessor:
             plt.colorbar(im, ax=ax, label=units)
         else:
             plt.colorbar(im, ax=ax)
+
+        return ax
+    
+
+
+
+@xr.register_dataset_accessor("mask")
+class maskAccessor:
+    def __init__(self, ds):
+        self._ds = ds
+
+    def reconstruct(
+        self,
+        index_dim="pixel",
+    ):
+        ds = self._ds
+
+        row_coord = f"rows_{index_dim}"
+        col_coord = f"cols_{index_dim}"
+        shape_attr = f"{index_dim}_shape"
+
+        if shape_attr not in ds.attrs:
+            raise KeyError(f"Dataset missing attribute '{shape_attr}'")
+
+        
+        rows = ds[row_coord].values
+        cols = ds[col_coord].values
+        shape = ds.attrs[shape_attr]
+
+        mask = np.zeros(shape, dtype=bool)
+        mask[rows, cols] = True
+
+        return mask
+
+    def plot(
+        self,
+        index_dim="pixel",
+        ax=None,
+        **imshow_kwargs,
+    ):
+        img = self.reconstruct(index_dim)
+
+        if ax is None:
+            fig, ax = plt.subplots()
+        orientation_attr = f"{index_dim}_image_orientation"
+        if orientation_attr == "swapaxes, flip Y axis":
+            im = np.swapaxes(im, 0, 1)
+            im = np.flip(im, 0)
+        elif orientation_attr == "swapaxes":
+            im = np.swapaxes(im, 0, 1)
+
+        if index_dim=="pixel":
+            im = ax.imshow(img, origin="lower", **imshow_kwargs)
+        elif index_dim=="node":
+            extent = [np.min(self._ds.cell_r), np.max(self._ds.cell_r), np.min(self._ds.cell_z), np.max(self._ds.cell_z)] 
+            im = ax.imshow(img, origin="lower", extent = extent, **imshow_kwargs)
+        ax.set_title(f"mask {index_dim}")
+
 
         return ax
