@@ -1,10 +1,9 @@
 from pathlib import Path
 import os
 import json
-import hashlib
 import xarray as xr
-from Tomography.core import result_inversion, fonction_tomo
-
+from Tomography.core import result_inversion, fonction_tomo, utility_functions
+from datetime import datetime
 if 'compass' in os.getcwd():
 # Read-only locations (NFS, Windows server, etc.)
     READ_ROOTS = [
@@ -29,7 +28,11 @@ else:
 RT_SUBDIR = "raytracing"
 INV_SUBDIR = "inversion"
 INV_MATRIX_SUBDIR = "inversion_matrix"
+TREATED_VIDEOS_SUBDIR = "treated_videos"
+DENOISING_SUBDIR = "denoising"
 
+date = datetime.now().isoformat()
+version = 1.0
 
 def find_existing(subdir: str, name: str):
     # First check writable root (most recent data)
@@ -59,13 +62,16 @@ def ensure_write_dirs():
     (WRITE_ROOT / RT_SUBDIR).mkdir(parents=True, exist_ok=True)
     (WRITE_ROOT / INV_SUBDIR).mkdir(parents=True, exist_ok=True)
     (WRITE_ROOT / INV_MATRIX_SUBDIR).mkdir(parents=True, exist_ok=True)
+    (WRITE_ROOT / TREATED_VIDEOS_SUBDIR).mkdir(parents=True, exist_ok=True)
+    (WRITE_ROOT / DENOISING_SUBDIR).mkdir(parents=True, exist_ok=True)
+    
 
 
 def get_or_create_raytracing(ParamsMachine, ParamsGrid) -> Path:
     ensure_write_dirs()
 
-    machine_hash = hash_params(ParamsMachine)
-    grid_hash = hash_params(ParamsGrid)
+    machine_hash = utility_functions.hash_params(ParamsMachine.to_dict())
+    grid_hash = utility_functions.hash_params(ParamsGrid.to_dict())
     rt_hash = machine_hash+grid_hash
     name = f"rt_{rt_hash}.zarr"
 
@@ -81,24 +87,59 @@ def get_or_create_raytracing(ParamsMachine, ParamsGrid) -> Path:
         "stage": "raytracing",
         "hash": rt_hash,
         "storage": "linux",
-        "version": 1.0,
+        "version": version,
+        "date": date,
     })
 
     ds.to_zarr(path, mode="w")
     return path
 
 
-def get_or_create_inversion(ParamsMachine, ParamsGrid, ParamsVid) -> Path:
+def get_or_create_treated_videos(ParamsVideo):
+    ensure_write_dirs()
+
+    videos_hash = utility_functions.hash_params(ParamsVideo)
+    name = f"vid_{videos_hash}.zarr"
+
+    
+    existing = find_existing(TREATED_VIDEOS_SUBDIR, name)
+    if existing:
+        return existing
+
+
+
+    path = WRITE_ROOT / TREATED_VIDEOS_SUBDIR / name
+    treated_video_ds = fonction_tomo.treat_videos(ParamsVideo)
+    treated_video_ds.attrs.update({
+        "stage": "treatment videos",
+        "hash": videos_hash,
+        "storage": "linux",
+        "version": version,
+    })
+    treated_video_ds.to_zarr(path, mode="w")
+
+    return path
+
+
+
+
+
+
+
+def get_or_create_inversion(ParamsMachine, ParamsGrid, ParamsVideo, ParamsInversion) -> Path:
     ensure_write_dirs()
 
     rt_path = get_or_create_raytracing(ParamsMachine, ParamsGrid)
     rt_ds = xr.open_zarr(rt_path, chunks="auto")
 
-    combined = {
-        "raytracing_hash": rt_ds.attrs["hash"],
-        **ParamsVid.to_dict(),
-    }
-    inv_hash = hash_params(combined)
+
+    treated_videos_path= get_or_create_treated_videos(ParamsVideo)
+    treated_video_ds = xr.open_zarr(treated_videos_path, chunks="auto")
+
+
+
+    inv_hash = utility_functions.hash_params(ParamsInversion.to_dict())
+    inv_hash = utility_functions.hash_params(rt_ds.attrs["hash"] + treated_video_ds.attrs["hash"] + inv_hash)
     name = f"inv_{inv_hash}.zarr"
 
     existing = find_existing(INV_SUBDIR, name)
@@ -107,12 +148,14 @@ def get_or_create_inversion(ParamsMachine, ParamsGrid, ParamsVid) -> Path:
 
     path = WRITE_ROOT / INV_SUBDIR / name
 
-    inv_ds = fonction_tomo.compute_inversion(rt_ds, ParamsVid)
+    inv_ds = fonction_tomo.compute_inversion(rt_ds, treated_video_ds, ParamsInversion)
     inv_ds.attrs.update({
         "stage": "inversion",
         "hash": inv_hash,
         "raytracing_hash": rt_ds.attrs["hash"],
         "storage": "linux",
+        "date":date,
+        "version": version,
     })
 
     inv_ds.to_zarr(path, mode="w")
@@ -122,25 +165,34 @@ def get_or_create_inversion(ParamsMachine, ParamsGrid, ParamsVid) -> Path:
 
 
 
+def get_or_create_denoising(ParamsMachine, ParamsGrid, ParamsVideo, ParamsInversion, ParamsDenoising) -> Path:
+    ensure_write_dirs()
+    inv_path = get_or_create_inversion(ParamsMachine, ParamsGrid, ParamsVideo, ParamsInversion)
+    inv_ds = xr.open_zarr(inv_path, chunks="auto")
+
+    denoising_hash = utility_functions.hash_params(ParamsDenoising.to_dict())
+    denoising_hash = inv_ds.attrs["hash"] + denoising_hash
+    name = f"inv_{denoising_hash}.zarr"
+
+    existing = find_existing(DENOISING_SUBDIR, name)
+    if existing:
+        return existing
+
+    path = WRITE_ROOT / DENOISING_SUBDIR / name
+
+    treated_videos_path= get_or_create_treated_videos(ParamsVideo)
+    treated_video_ds = xr.open_zarr(treated_videos_path, chunks="auto")
 
 
+    denoising_ds = fonction_tomo.compute_denoising(inv_ds, treated_video_ds, ParamsDenoising)
+    denoising_ds.attrs.update({
+        "stage": "denoising",
+        "hash": denoising_hash,
+        "inversion_hash": inv_ds.attrs["hash"],
+        "storage": "linux",
+        "date" :date,
+        "version": version,
+    })
 
-
-def hash_params(params, length=10) -> str:
-    if isinstance(params, result_inversion.Params):
-        params = params.to_dict()
-    norm = normalize_params(params)
-    payload = json.dumps(norm, sort_keys=True, default=str)
-    return hashlib.sha1(payload.encode()).hexdigest()[:length]
-
-
-def normalize_params(obj):
-    if isinstance(obj, dict):
-        return {k: normalize_params(v) for k, v in sorted(obj.items())}
-    elif isinstance(obj, (list, tuple)):
-        return [normalize_params(v) for v in obj]
-    elif hasattr(obj, "__dict__"):
-        return normalize_params(obj.__dict__)
-    else:
-        return obj
-    
+    denoising_ds.to_zarr(path, mode="w")
+    return path

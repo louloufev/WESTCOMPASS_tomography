@@ -11,6 +11,8 @@ Tomography/ressources/
 inversion/
 inversion_matrix/
 raytracing/
+treated_videos/
+denoising/
 __pycache__/
 *.pyc
 *.pyo

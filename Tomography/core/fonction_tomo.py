@@ -79,13 +79,40 @@ def compute_raytracing(ParamsMachine, ParamsGrid):
 
     return rt_ds
 
+def treat_videos(ParamsVideo):
+    vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = utility_functions.get_vid(ParamsVideo)
+    treated_video_ds = xr.Dataset(
+        data_vars={
+            "vid":(
+                ("t_inv","Y_axis", "X_axis"),
+                vid,
+                {"units":"bits"}
+            ),
+        },
+        coords={
+            "t_inv": ("t_inv", t_inv, {"units":'s', "long_name": "inversion time"}),
+            "Y_axis" : ("Y_axis" , np.arange(image_dim_y)),
+            "X_axis" : ("X_axis" , np.arange(image_dim_x)),
+        },
+        attrs={
+            "frame_input": frame_input,
+            "t_start": t_start,
+            "t0" : t0,
+            "ParamsVideo" : ParamsVideo.to_dict(),
+            "NF" : len_vid,
+            "fps" : fps,
+        }
+    )
+    return treated_video_ds
 
-def compute_inversion(rt_ds, ParamsVid):
+def compute_inversion(rt_ds, treated_videos_ds, ParamsInversion):
     ParamsMachine = result_inversion.ParamsMachine(**rt_ds.ParamsMachine)
     
-    vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = utility_functions.get_vid(ParamsVid)
+    vid = treated_videos_ds.vid.to_numpy()
+    t_inv = treated_videos_ds.t_inv.to_numpy()
     vid = np.swapaxes(vid, 1,2)
     # utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
+
     if ParamsMachine.machine == 'WEST':
         vid = np.swapaxes(vid, 1,2)
         vid = np.flip(vid, 1)
@@ -95,17 +122,15 @@ def compute_inversion(rt_ds, ParamsVid):
     if ParamsMachine.decimation is not None and ParamsMachine.decimation != 1:
         vid = reduce_vid_precision(vid, decimation = ParamsMachine.decimation)
 
-    transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel = inversion_module.prep_inversion_dataset(rt_ds, ParamsVid)
-    folder_inverse_matrix = 'inversion_matrix/' + rt_ds.hash
+    transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel = inversion_module.prep_inversion_dataset(rt_ds, ParamsInversion)
+    folder_inverse_matrix = get_name_folder_inverse_matrix(rt_ds.hash, ParamsInversion)
     images = vid[:, mask_pixel]
-    pdb.set_trace()
     print("starting inversion")
     inv_images, images_retrofit = inversion_module.inversion(images, 
                                     transfert_matrix, 
-                                    inversion_method = ParamsVid.inversion_method, 
+                                    inversion_method = ParamsInversion.inversion_method, 
                                     folder_inverse_matrix =folder_inverse_matrix,
-                                    dict_vid= ParamsVid.dict_vid, 
-                                    inversion_parameter = ParamsVid.inversion_parameter)
+                                    inversion_parameter = ParamsInversion.inversion_parameter)
     inv_ds = xr.Dataset(
         data_vars={
             "inversion":(
@@ -143,13 +168,86 @@ def compute_inversion(rt_ds, ParamsVid):
             "cell_z" : rt_ds.cell_z,
             "node_image_orientation": "swapaxes, flip Y axis",
             "pixel_image_orientation": "swapaxes",
+            "ParamsInversion" : ParamsInversion.to_dict(),
+            "ParamsMachine" : rt_ds.ParamsMachine,
+            "ParamsGrid" : rt_ds.ParamsGrid,
+            "ParamsVideo" : treated_videos_ds.ParamsVideo,
+            "folder_inverse_matrix" : folder_inverse_matrix,
         }
     )
     return inv_ds
 
-def compute_denoising(inv_ds, ParamsVid):
-    
-    return inv_ds
+
+
+
+
+
+
+
+
+
+def compute_denoising(inv_ds, treated_video_ds, ParamsDenoising):
+    if not inversion_module.validate_denoising_method(inv_ds.attrs["ParamsInversion"]["inversion_method"]):
+        raise ValueError("inversion method does not have a denoising process")
+    ParamsMachine = result_inversion.ParamsMachine(**inv_ds.ParamsMachine)
+    vid = treated_video_ds.vid.to_numpy()
+    vid = np.swapaxes(vid, 1,2)
+    # utility_functions.save_array_as_img(vid, main_folder_image + 'image_vid_mid_rotated.png')
+
+    if ParamsMachine.machine == 'WEST':
+        vid = np.swapaxes(vid, 1,2)
+        vid = np.flip(vid, 1)
+    if ParamsMachine.param_fit is not None:
+        vid = fit_size_vid(vid, inv_ds.pixel_shape)
+
+    if ParamsMachine.decimation is not None and ParamsMachine.decimation != 1:
+        vid = reduce_vid_precision(vid, decimation = ParamsMachine.decimation)
+    mask_pixel = np.zeros(inv_ds.pixel_shape, dtype = bool)
+    mask_pixel[inv_ds.rows_pixel.to_numpy(), inv_ds.cols_pixel.to_numpy()] = True
+
+    images = vid[:, mask_pixel]
+    denoised_image, norms = inversion_module.denoising_dataset(inv_ds, images, ParamsDenoising)
+    denoising_ds = inv_ds = xr.Dataset(
+        data_vars={
+            "inversion":(
+                ("t_inv", "node"),
+                denoised_image,
+                {"units":"m"}
+            ),
+            "norms": (
+                ("node", ),
+                norms,
+                {"units": "n.a"},
+            ),
+        },
+        coords={
+            "t_inv": ("t_inv", inv_ds.t_inv.to_numpy(), {"units":'s', "long_name": "inversion time"}),
+            "pixel": ("pixel", inv_ds.pixel.to_numpy()),
+            "node": ("node", inv_ds.node.to_numpy()),
+            "rows_pixel": ("pixel", inv_ds.rows_pixel.to_numpy()),
+            "cols_pixel": ("pixel", inv_ds.cols_pixel.to_numpy()),
+            "rows_node": ("node", inv_ds.rows_node.to_numpy()),
+            "cols_node": ("node", inv_ds.cols_node.to_numpy()),
+            
+
+        },
+        attrs={
+            "pixel_shape": inv_ds.pixel_shape,
+            "node_shape": inv_ds.node_shape,
+            "mask_description": "Camera mask applied",
+            "cell_r" : inv_ds.cell_r,
+            "cell_z" : inv_ds.cell_z,
+            "node_image_orientation": "swapaxes, flip Y axis",
+            "pixel_image_orientation": "swapaxes",
+            "ParamsVideo" : inv_ds.ParamsVideo,
+            "ParamsInversion" : inv_ds.ParamsInversion,
+            "ParamsMachine" : inv_ds.ParamsMachine,
+            "ParamsGrid" : inv_ds.ParamsGrid,
+            "ParamsDenoising" : ParamsDenoising.to_dict()
+        }
+    )
+
+    return denoising_ds
 
 
 def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
@@ -660,13 +758,12 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
         mask_node = np.zeros_like(RZ_mask_grid, dtype = bool)
         rows_noeud, indphi, cols_noeud = np.unravel_index(node, mask_node.shape)
         mask_node[rows_noeud,indphi, cols_noeud] = True
+        true_nodes = node
     elif ParamsGrid.symetry == 'toroidal':
         true_nodes = np.flatnonzero(RZ_mask_grid)
         mask_node = np.zeros_like(RZ_mask_grid, dtype = bool)
         mask_node.ravel()[true_nodes[node]] = True
-        node2, = np.where(true_nodes)
     mask_node = np.squeeze(mask_node)
-    pdb.set_trace()
     print('shape voxel_map ', plasma2.voxel_map.shape)
     print('shape mask_node ', mask_node.shape)
     
@@ -679,10 +776,10 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
 
     print(transfert_matrix.shape)
     pixel = np.squeeze(pixel)
-    node = np.squeeze(node)
+    true_nodes = np.squeeze(true_nodes)
     
     print('shape reduced transfert matrix = ' + str(transfert_matrix.shape))
-    rows_node, cols_node = np.unravel_index(node, mask_node.shape)
+    rows_node, cols_node = np.unravel_index(true_nodes, mask_node.shape)
     rows_pixel, cols_pixel = np.unravel_index(pixel, mask_pixel.shape)
     pdb.set_trace()
     return transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel, cell_r, cell_z
@@ -1598,3 +1695,9 @@ def get_LOS_spectrometer(name):
     Z2 = LOS.Z2[ind_LODIV]
     PHI2 = LOS.PHI2[ind_LODIV]
     return R1, Z1 ,PHI1, X1, Y1, R2, Z2, PHI2 
+
+
+def get_name_folder_inverse_matrix(rt_hash, ParamsVid):
+    inversion_method_parameter = dict(inversion_method= ParamsVid.inversion_method, inversion_parameter=ParamsVid.inversion_parameter)
+    inversion_matrix_hash = utility_functions.hash_params(inversion_method_parameter)
+    return 'inversion_matrix/' + rt_hash+ inversion_matrix_hash

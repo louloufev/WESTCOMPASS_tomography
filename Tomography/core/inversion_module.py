@@ -170,10 +170,10 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         inv_images_thresholded_normed = np.zeros((images.shape[0], transfert_matrix.shape[1]))
         images_retrofit = np.zeros_like(images)
 
-        inversion = CholmodMfr()
+        inversion_class = CholmodMfr()
         for i in range(images.shape[0]):
             image = images[i, :]
-            inv_image, dict_inv = inversion.invert(image, transfert_matrix, derivative_matrix)
+            inv_image, dict_inv = inversion_class.invert(image, transfert_matrix, derivative_matrix)
             inv_images[i, :] = inv_image
             inv_normed[i, :] = inv_image
             inv_images_thresholded[i, :] = inv_image
@@ -189,7 +189,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
 
 
 
-        inversion = Bob()
+        inversion_class = Bob()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(transfert_matrix)
         rcond = inversion_parameter.get('rcond')
@@ -200,16 +200,16 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         path_norm_matrix = folder_inverse_matrix + 'norm'
 
         try:
-            inversion.load_decomposition(path_inverse_matrix)
+            inversion_class.load_decomposition(path_inverse_matrix)
             print('successfully loaded inverse matrix')
         except:
-            inversion.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
-            inversion._normalise_wo_mat()
+            inversion_class.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
+            inversion_class._normalise_wo_mat()
         os.makedirs(os.path.dirname(path_inverse_matrix), exist_ok = True)
-        inversion.save_decomposition(path_inverse_matrix)
+        inversion_class.save_decomposition(path_inverse_matrix)
 
-        inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
-        inv_normed = np.divide(inv_images, inversion.norms)
+        inv_images = inversion_class(images.T) #put the image in the #pixels, times dimension order
+        inv_normed = np.divide(inv_images, inversion_class.norms)
         inv_images_thresholded = np.zeros((transfert_matrix.shape[1], images.shape[0]))
         inv_images_thresholded_normed = np.zeros((transfert_matrix.shape[1], images.shape[0]))
         images_retrofit = np.zeros_like(images)
@@ -220,7 +220,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         #     inv_images[i, :] = inv_image
         #     inv_normed[i, :] = inv_image
             image = images.T[:, i]
-            inv_images_thresholded[:, i] = np.squeeze(inversion.thresholding(image[:, np.newaxis], c = c))
+            inv_images_thresholded[:, i] = np.squeeze(inversion_class.thresholding(image[:, np.newaxis], c = c))
         #     inv_images_thresholded_normed[i, :] = inv_image
             inv_image = inv_images[:, i] 
             images_retrofit[i, :] = transfert_matrix.dot(inv_image)
@@ -239,7 +239,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
 
 
 
-        inversion = SparseBob()
+        inversion_class = SparseBob()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(transfert_matrix)
 
@@ -248,16 +248,16 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         path_norm_matrix = folder_inverse_matrix + 'norm'
 
         try:
-            inversion.load_decomposition(path_inverse_matrix)
+            inversion_class.load_decomposition(path_inverse_matrix)
             print('successfully loaded inverse matrix')
         except:
-            inversion.decompose(transfert_matrix, simple_base)
-            inversion._normalise_wo_mat()
+            inversion_class.decompose(transfert_matrix, simple_base)
+            inversion_class._normalise_wo_mat()
             os.makedirs(os.path.dirname(path_inverse_matrix), exist_ok = True)
-            inversion.save_decomposition(path_inverse_matrix)
+            inversion_class.save_decomposition(path_inverse_matrix)
 
-        inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
-        inv_normed = np.divide(inv_images, inversion.norms)
+        inv_images = inversion_class(images.T) #put the image in the #pixels, times dimension order
+        inv_normed = np.divide(inv_images, inversion_class.norms)
         inv_images_thresholded = np.zeros((transfert_matrix.shape[1], images.shape[0]))
         inv_images_thresholded_normed = np.zeros((transfert_matrix.shape[1], images.shape[0]))
         images_retrofit = np.zeros_like(images)
@@ -268,7 +268,7 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         #     inv_images[i, :] = inv_image
         #     inv_normed[i, :] = inv_image
             image = images.T[:, i]
-            inv_images_thresholded[:, i] = np.squeeze(inversion.thresholding(image[:, np.newaxis], c = c))
+            inv_images_thresholded[:, i] = np.squeeze(inversion_class.thresholding(image[:, np.newaxis], c = c))
         #     inv_images_thresholded_normed[i, :] = inv_image
             inv_image = inv_images[:, i] 
             images_retrofit[i, :] = transfert_matrix.dot(inv_image)
@@ -278,10 +278,10 @@ def inversion_and_thresolding(images, transfert_matrix, inversion_method, folder
         inv_images_thresholded = inv_images_thresholded.T
         inv_images_thresholded_normed = inv_images_thresholded_normed.T
     elif inversion_method == 'Mfr':
-        inversion = Mfr()
+        inversion_class = Mfr()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
-        inversion.decompose(transfert_matrix, simple_base, solver_kw= inversion_parameter)
-        inv_images = inversion(images, simple_base)
+        inversion_class.decompose(transfert_matrix, simple_base, solver_kw= inversion_parameter)
+        inv_images = inversion_class(images, simple_base)
 
         images_retrofit = transfert_matrix.dot(inv_image.T)
     elif inversion_method == 'nnls':
@@ -623,7 +623,7 @@ def denoising(Inversion_results):
 
 
 
-        inversion = Bob()
+        inversion_class = Bob()
         simple_base = csr_matrix(np.eye( Inversion_results.transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(Inversion_results.transfert_matrix)
         rcond = Inversion_results.ParamsVid.inversion_parameter.get('rcond')
@@ -632,22 +632,22 @@ def denoising(Inversion_results):
         c = c or 0
 
         try:
-            inversion.load_decomposition(Inversion_results.path_inverse_matrix)
+            inversion_class.load_decomposition(Inversion_results.path_inverse_matrix)
             print('successfully loaded inverse matrix')
         except:
-            inversion.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
-            inversion._normalise_wo_mat()
+            inversion_class.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
+            inversion_class._normalise_wo_mat()
             os.makedirs(os.path.dirname(Inversion_results.path_inverse_matrix), exist_ok = True)
-            inversion.save_decomposition(Inversion_results.path_inverse_matrix)
+            inversion_class.save_decomposition(Inversion_results.path_inverse_matrix)
         images = Inversion_results.vid[:, Inversion_results.mask_pixel]
 
-        inv_images_thresholded = np.squeeze(inversion.thresholding(images.T, c = c))
+        inv_images_thresholded = np.squeeze(inversion_class.thresholding(images.T, c = c))
         return inv_images_thresholded.T
 
     elif Inversion_results.ParamsVid.inversion_method == 'SparseBob':
        
 
-        inversion = SparseBob()
+        inversion_class = SparseBob()
         simple_base = csr_matrix(np.eye( Inversion_results.transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(Inversion_results.transfert_matrix)
         
@@ -655,25 +655,30 @@ def denoising(Inversion_results):
         c = c or 0
 
         try:
-            inversion.load_decomposition(Inversion_results.path_inverse_matrix)
+            inversion_class.load_decomposition(Inversion_results.path_inverse_matrix)
             print('successfully loaded inverse matrix')
         except:
-            inversion.decompose(transfert_matrix, simple_base)
-            inversion._normalise_wo_mat()
+            inversion_class.decompose(transfert_matrix, simple_base)
+            inversion_class._normalise_wo_mat()
             os.makedirs(os.path.dirname(Inversion_results.path_inverse_matrix), exist_ok = True)
-            inversion.save_decomposition(Inversion_results.path_inverse_matrix)
+            inversion_class.save_decomposition(Inversion_results.path_inverse_matrix)
         images = Inversion_results.vid[:, Inversion_results.mask_pixel]
 
 
         inv_images_thresholded = np.zeros((transfert_matrix.shape[1], images.shape[0]))
         for i in range(images.shape[0]):
             image = images.T[:, i]
-            inv_images_thresholded[:, i] = np.squeeze(inversion.thresholding(image[:, np.newaxis], c = c))
+            inv_images_thresholded[:, i] = np.squeeze(inversion_class.thresholding(image[:, np.newaxis], c = c))
 
         return inv_images_thresholded.T
     
 
-
+def validate_denoising_method(inversion_method):
+    denoising_method = ['Bob', "SparseBob"]
+    if inversion_method in denoising_method:
+        return True
+    else:
+        return False
 
 
 def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix, dict_vid= {}, inversion_parameter = {"rcond" : -1}):
@@ -722,7 +727,7 @@ def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix,
         from tomotok.core.derivative import compute_aniso_dmats
         from tomotok.core.geometry import RegularGrid
  
-        inversion = Bob()
+        inversion_class = Bob()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(transfert_matrix)
         rcond = inversion_parameter.get('rcond')
@@ -732,15 +737,15 @@ def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix,
         path_inverse_matrix = folder_inverse_matrix
         path_norm_matrix = folder_inverse_matrix + 'norm'
         try:
-            inversion.load_decomposition(path_inverse_matrix)
+            inversion_class.load_decomposition(path_inverse_matrix)
             print('successfully loaded inverse matrix')
         except:
-            inversion.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
-            inversion._normalise_wo_mat()
+            inversion_class.decompose(transfert_matrix, simple_base, solver_kw = solver_dict)
+            inversion_class._normalise_wo_mat()
         os.makedirs(os.path.dirname(path_inverse_matrix), exist_ok = True)
-        inversion.save_decomposition(path_inverse_matrix)
+        inversion_class.save_decomposition(path_inverse_matrix)
 
-        inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
+        inv_images = inversion_class(images.T) #put the image in the #pixels, times dimension order
         images_retrofit = np.zeros_like(images)
         for i in range(images.shape[0]):
             inv_image = inv_images[:, i] 
@@ -751,22 +756,22 @@ def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix,
         from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
         from tomotok.core.derivative import compute_aniso_dmats
         from tomotok.core.geometry import RegularGrid
-        inversion = SparseBob()
+        inversion_class = SparseBob()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
         transfert_matrix = csr_matrix(transfert_matrix)
 
         path_inverse_matrix = folder_inverse_matrix
         path_norm_matrix = folder_inverse_matrix + 'norm'
         try:
-            inversion.load_decomposition(path_inverse_matrix)
+            inversion_class.load_decomposition(path_inverse_matrix)
             print('successfully loaded inverse matrix')
         except:
-            inversion.decompose(transfert_matrix, simple_base)
-            inversion._normalise_wo_mat()
+            inversion_class.decompose(transfert_matrix, simple_base)
+            inversion_class._normalise_wo_mat()
             os.makedirs(os.path.dirname(path_inverse_matrix), exist_ok = True)
-            inversion.save_decomposition(path_inverse_matrix)
+            inversion_class.save_decomposition(path_inverse_matrix)
 
-        inv_images = inversion(images.T) #put the image in the #pixels, times dimension order
+        inv_images = inversion_class(images.T) #put the image in the #pixels, times dimension order
         images_retrofit = np.zeros_like(images)
         for i in range(images.shape[0]):
             inv_image = inv_images[:, i] 
@@ -774,10 +779,10 @@ def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix,
         #put back the inversion in the times, nodes order
         inv_images = inv_images.T 
     elif inversion_method == 'Mfr':
-        inversion = Mfr()
+        inversion_class = Mfr()
         simple_base = csr_matrix(np.eye( transfert_matrix.shape[1] ))
-        inversion.decompose(transfert_matrix, simple_base, solver_kw= inversion_parameter)
-        inv_images = inversion(images, simple_base)
+        inversion_class.decompose(transfert_matrix, simple_base, solver_kw= inversion_parameter)
+        inv_images = inversion_class(images, simple_base)
         images_retrofit = transfert_matrix.dot(inv_image.T)
     elif inversion_method == 'nnls':
         try:
@@ -856,7 +861,7 @@ def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix,
 
 
 
-def prep_inversion_dataset(rt_ds, ParamsVid):
+def prep_inversion_dataset(rt_ds, ParamsInversion):
     transfert_matrix = rt_ds.transfert_matrix.to_numpy()
     pixel = rt_ds.pixel.to_numpy()
     node =  rt_ds.node.to_numpy()
@@ -864,7 +869,7 @@ def prep_inversion_dataset(rt_ds, ParamsVid):
     mask_node[rt_ds.rows_node.to_numpy(), rt_ds.cols_node.to_numpy()] = True
     mask_pixel = np.zeros(rt_ds.pixel_shape, dtype = bool)
     mask_pixel[rt_ds.rows_pixel.to_numpy(), rt_ds.cols_pixel.to_numpy()] = True
-    inversion_parameter = ParamsVid.inversion_parameter
+    inversion_parameter = ParamsInversion.inversion_parameter
     if 'min_visibility_node' in inversion_parameter.keys():
         
         min_visibility_node = inversion_parameter.get('min_visibility_node')
@@ -882,3 +887,52 @@ def prep_inversion_dataset(rt_ds, ParamsVid):
     rows_pixel, cols_pixel = np.unravel_index(pixel, mask_pixel.shape)
 
     return transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel
+
+
+
+
+def denoising_dataset(inv_ds, images, ParamsDenoising):
+    inversion_method = inv_ds.attrs["ParamsInversion"]["inversion_method"]
+    inversion_parameter = inv_ds.attrs["ParamsInversion"]["inversion_parameter"]
+    folder_inverse_matrix = inv_ds.attrs["folder_inverse_matrix"]
+    from tomotok.core.inversions import Bob, SparseBob, CholmodMfr, Mfr
+    if inversion_method == 'Bob':
+        
+
+
+
+        inversion_class = Bob()
+        rcond = inversion_parameter.get('rcond')
+        solver_dict = {'rcond' : rcond}
+        c = ParamsDenoising.c
+        c = c or 0
+        print(f"denoising parameter :  {c}")
+        inversion_class.load_decomposition(folder_inverse_matrix)
+           
+        inv_images_thresholded = np.zeros((images.shape[0], inversion_class.dec_mat.shape[1]))
+        inv_images_thresholded = inv_images_thresholded.T
+        for i in range(images.shape[0]):
+            image = images.T[:, i]
+            inv_images_thresholded[:, i] = np.squeeze(inversion_class.thresholding(image[:, np.newaxis], c = c))
+
+        return inv_images_thresholded.T, np.squeeze(inversion_class.norms)
+
+    elif inversion_method == 'SparseBob':
+       
+
+        inversion_class = SparseBob()
+        
+        c = ParamsDenoising.c
+        c = c or 0
+        print(f"denoising parameter :  {c}")
+        inversion_class.load_decomposition(folder_inverse_matrix)
+        print('successfully loaded inverse matrix')
+            
+
+        inv_images_thresholded = np.zeros((images.shape[0], inversion_class.dec_mat.shape[1]))
+        inv_images_thresholded = inv_images_thresholded.T
+        for i in range(images.shape[0]):
+            image = images.T[:, i]
+            inv_images_thresholded[:, i] = np.squeeze(inversion_class.thresholding(image[:, np.newaxis], c = c))
+
+        return inv_images_thresholded.T, np.squeeze(inversion_class.norms)

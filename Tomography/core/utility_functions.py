@@ -13,6 +13,7 @@ import subprocess
 import xarray as xr
 import json
 import re
+import hashlib
 try:
     campaign_metadata_path = "/Home/LF285735/Documents/Python/shot_camera_metadata.h5"
     campaign_metadata = xr.open_dataset(campaign_metadata_path)
@@ -1532,3 +1533,23 @@ def load_west_equilibrium(nshot):
 def first_5_consecutive_digits(s: str) -> str:
     match = re.search(r"\d{5}", s)
     return match.group(0) if match else None
+
+
+
+
+def hash_params(params, length=10) -> str:
+    norm = normalize_params(params)
+    payload = json.dumps(norm, sort_keys=True, default=str)
+    return hashlib.sha1(payload.encode()).hexdigest()[:length]
+
+
+def normalize_params(obj):
+    if isinstance(obj, dict):
+        return {k: normalize_params(v) for k, v in sorted(obj.items())}
+    elif isinstance(obj, (list, tuple)):
+        return [normalize_params(v) for v in obj]
+    elif hasattr(obj, "__dict__"):
+        return normalize_params(obj.__dict__)
+    else:
+        return obj
+    

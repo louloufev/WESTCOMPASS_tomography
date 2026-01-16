@@ -111,14 +111,20 @@ ParamsGrid= result_inversion.ParamsGrid(dr_grid = dr_grid,
                                                     class_name = 'ParamsGrid')
 
 
-ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
-                                                    nshot = nshot,
+ParamsVideo = result_inversion.ParamsVideo(nshot = nshot,
                                                     path_vid = path_vid,
                                                     dict_vid = dict_vid,
                                                     time_input =time_input,
                                                     frame_input = frame_input,
+                                                    )
+
+
+
+ParamsInversion = result_inversion.ParamsInversion(inversion_method = inversion_method,
                                                     inversion_parameter = inversion_parameter,
-                                                    c = c, 
-                                                    class_name = 'ParamsVid')
+                                                    )
 
+ParamsDenoising = result_inversion.ParamsDenoising(c = c)
 
+def load_input():
+    return ParamsMachine, ParamsGrid, ParamsVideo, ParamsInversion, ParamsDenoising

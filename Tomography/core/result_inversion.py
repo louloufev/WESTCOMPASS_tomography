@@ -1,5 +1,5 @@
-from . import utility_functions
-from . import inversion_module
+from Tomography.core import utility_functions
+from Tomography.core import inversion_module
 import importlib
 from scipy.sparse import csr_matrix, save_npz, csc_matrix, load_npz, isspmatrix
 from scipy.io import loadmat
@@ -97,6 +97,32 @@ class ParamsVid(Params):
             # 👆 add subclass-specific exclusions
         return super().to_filename(prefix, ext, sep, exclude, full= False)
     
+
+
+
+@dataclass
+class ParamsVideo(Params):
+
+    nshot : int = None
+    path_vid : str = None
+    dict_vid : dict = field(default_factory=dict)
+    time_input : np.array = None
+    frame_input : np.array = None
+    class_name : str = 'ParamsVideo'
+    
+
+@dataclass
+class ParamsInversion(Params):
+
+    inversion_method : str = None
+    inversion_parameter : dict = field(default_factory=dict)
+    class_name : str = 'ParamsInversion'
+    
+@dataclass
+class ParamsDenoising(Params):
+    c : float = None
+    class_name : str = 'ParamsDenoising'
+
 @dataclass
 class ParamsGrid(Params):
     dr_grid : float = field(metadata={"units": "m"})
