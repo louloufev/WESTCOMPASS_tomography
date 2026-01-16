@@ -41,16 +41,16 @@ inv_ds.image2d.plot(var = 'images_retrofit', t_inv = time[197], index_dim = 'pix
 #     node : poloidal plan
 
 ####same plot image, but without the implemented method for plotting, and instead the method for reconstructing the full 2D image, saving it as image_retrofit
-image_retrofit = inv_ds.reconstruct(var = 'images_retrofit', t_inv = time[197], index_dim = 'pixel')
+image_retrofit = inv_ds.image2d.reconstruct(var = 'images_retrofit', t_inv = time[197], index_dim = 'pixel')
 fig, ax = plt.subplots()
-ax.imshow(image_retrofit[197])
+ax.imshow(image_retrofit)
 
 plt.savefig("retrofitted_image.png") #save image
 
-#same but with inversion results; NB : Z axis is flipped !
-inversion = inv_ds.reconstruct(var = 'inversion', t_inv = time[197], index_dim = 'node')
+#same but with inversion results; NB : Z axis is flipped ! (not the plot (imshow plots the Yaxis from up to down), but the z values are in descending order in inversion !)
+inversion = inv_ds.image2d.reconstruct(var = 'inversion', t_inv = time[197], index_dim = 'node')
 fig, ax = plt.subplots()
-ax.imshow(inversion[197])
+ax.imshow(inversion)
 
 plt.savefig("inversion.png") #save image
 
