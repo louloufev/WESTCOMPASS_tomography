@@ -138,7 +138,7 @@ def compute_inversion(rt_ds, treated_videos_ds, ParamsInversion):
                 inv_images,
                 {"units":"m"}
             ),
-            "image_retrofit":(
+            "images_retrofit":(
                 ("t_inv",  "pixel"),
                 images_retrofit,
                 {"units":"bits"}
@@ -209,7 +209,7 @@ def compute_denoising(inv_ds, treated_video_ds, ParamsDenoising):
     denoised_image, norms = inversion_module.denoising_dataset(inv_ds, images, ParamsDenoising)
     denoising_ds = inv_ds = xr.Dataset(
         data_vars={
-            "inversion":(
+            "denoising":(
                 ("t_inv", "node"),
                 denoised_image,
                 {"units":"m"}
@@ -781,8 +781,7 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
     print('shape reduced transfert matrix = ' + str(transfert_matrix.shape))
     rows_node, cols_node = np.unravel_index(true_nodes, mask_node.shape)
     rows_pixel, cols_pixel = np.unravel_index(pixel, mask_pixel.shape)
-    pdb.set_trace()
-    return transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel, cell_r, cell_z
+    return transfert_matrix, mask_node, mask_pixel, true_nodes, pixel, rows_node, cols_node, rows_pixel, cols_pixel, cell_r, cell_z
 
 
 
@@ -1388,7 +1387,7 @@ class Image2DAccessor:
         row_coord = f"rows_{index_dim}"
         col_coord = f"cols_{index_dim}"
         shape_attr = f"{index_dim}_shape"
-
+        
         if shape_attr not in ds.attrs:
             raise KeyError(f"Dataset missing attribute '{shape_attr}'")
 
@@ -1400,6 +1399,15 @@ class Image2DAccessor:
         img = np.full(shape, fill_value, dtype=data.dtype)
         img[rows, cols] = data
 
+        #handles orientation of the reconstructed image
+        # every image will be oriented in the same video format : (img.shape[0], image.shape[1]) : (Yaxis, Xaxis), Yaxis from up to down
+        orientation_name = f"{index_dim}_image_orientation"
+        orientation_attr = self._ds.attrs[orientation_name]
+        if orientation_attr == "swapaxes, flip Y axis":
+            img = img.T
+            img = np.flip(img, 0)
+        elif orientation_attr == "swapaxes":
+            img = img.T
         return img
 
     def plot(
@@ -1414,15 +1422,9 @@ class Image2DAccessor:
 
         if ax is None:
             fig, ax = plt.subplots()
-        orientation_name = f"{index_dim}_image_orientation"
-        orientation_attr = self._ds.attrs[orientation_name]
-        if orientation_attr == "swapaxes, flip Y axis":
-            img = np.swapaxes(img, 0,1)
-            img = np.flip(img, 0)
-        elif orientation_attr == "swapaxes":
-            img = np.swapaxes(img, 0, 1)
+        
         if index_dim=="pixel":
-            im = ax.imshow(img, origin="lower", **imshow_kwargs)
+            im = ax.imshow(img, **imshow_kwargs)
         elif index_dim=="node":
             extent = [np.min(self._ds.cell_r), np.max(self._ds.cell_r), np.min(self._ds.cell_z), np.max(self._ds.cell_z)] 
             im = ax.imshow(img, extent = extent, **imshow_kwargs)
@@ -1701,3 +1703,87 @@ def get_name_folder_inverse_matrix(rt_hash, ParamsVid):
     inversion_method_parameter = dict(inversion_method= ParamsVid.inversion_method, inversion_parameter=ParamsVid.inversion_parameter)
     inversion_matrix_hash = utility_functions.hash_params(inversion_method_parameter)
     return 'inversion_matrix/' + rt_hash+ inversion_matrix_hash
+
+
+
+
+@xr.register_dataset_accessor("videomaker")
+class Videomaker:
+    def __init__(self, ds):
+        self._ds = ds
+
+    def process(self,
+                filename = '',
+                var = 'inversion',
+                index_dim="node",
+                fill_value=np.nan,
+                std_deviation_range=0,
+                R = None,
+                Z = None,
+                keep_only = "all",
+        ):
+        
+        filename = filename + f"{var}_" + f"vid_{keep_only}" + 'std_deviation_range' + str(std_deviation_range) + '.mp4'
+        filename = filename if filename.endswith(".mp4") else filename + ".mp4"
+
+        if R is None:
+            R = self._ds.cell_r
+        if Z is None:
+            Z = self._ds.cell_z
+        array = self._ds.videoreconstruct.reconstruct(var = var, index_dim = index_dim, fill_value = fill_value)
+        if keep_only == "peaks":
+            array[array<0] = 0
+        elif keep_only == "holes":
+            array[array>0] = 0
+            array = np.abs(array)
+        elif keep_only == "all":
+            print("keep all values")
+        else:
+            raise ValueError(f"unrecognized video format keep only : {keep_only}")
+        
+        if std_deviation_range !=0:
+            Mean = np.mean(array[array!= 0])
+            Std = np.std(array[array!= 0])
+            #array[array<= Mean-std_deviation_range*Std] = Mean-std_deviation_range*Std
+            array[array>= Mean+std_deviation_range*Std] = Mean+std_deviation_range*Std      
+        R, Z = utility_functions.array3d_to_video(array, filename, fps=20, R = R, Z = Z)
+        return np.array(R), np.array(Z)
+
+
+
+
+@xr.register_dataset_accessor("videoreconstruct")
+class Video2DAccessor:
+    def __init__(self, ds):
+        self._ds = ds
+
+    def reconstruct(
+        self,
+        var,
+        index_dim="pixel",
+        fill_value=np.nan,
+    ):
+        ds = self._ds
+        orientation_name = f"{index_dim}_image_orientation"
+        orientation_attr = self._ds.attrs[orientation_name]
+        row_coord = f"rows_{index_dim}"
+        col_coord = f"cols_{index_dim}"
+        shape_attr = f"{index_dim}_shape"
+
+        if shape_attr not in ds.attrs:
+            raise KeyError(f"Dataset missing attribute '{shape_attr}'")
+
+        data = ds[var].to_numpy()
+        rows = ds[row_coord].values
+        cols = ds[col_coord].values
+        shape_dim = ds.attrs[shape_attr]
+        shape = (data.shape[0], shape_dim[0], shape_dim[1])
+        img = np.full(shape, fill_value, dtype=data.dtype)
+        for i in range(data.shape[0]):
+            img[i, rows, cols] = data[i, :]
+        if orientation_attr == "swapaxes, flip Y axis":
+            img = np.swapaxes(img, 1,2)
+            img = np.flip(img, 1)
+        elif orientation_attr == "swapaxes":
+            img = np.swapaxes(img, 1, 2)
+        return img

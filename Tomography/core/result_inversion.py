@@ -117,7 +117,7 @@ class ParamsInversion(Params):
     inversion_method : str = None
     inversion_parameter : dict = field(default_factory=dict)
     class_name : str = 'ParamsInversion'
-    
+
 @dataclass
 class ParamsDenoising(Params):
     c : float = None

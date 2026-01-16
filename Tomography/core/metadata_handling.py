@@ -35,6 +35,8 @@ date = datetime.now().isoformat()
 version = 1.0
 
 def find_existing(subdir: str, name: str):
+    # Look for file in each root folders. returns path if it exists
+
     # First check writable root (most recent data)
     path = WRITE_ROOT / subdir / name
     if path.exists():
@@ -49,6 +51,7 @@ def find_existing(subdir: str, name: str):
     return None
 
 def get_writable_root() -> Path:
+    #check if user has the right to write in write_root folder 
     try:
         WRITE_ROOT.mkdir(parents=True, exist_ok=True)
         test = WRITE_ROOT / ".write_test"
@@ -59,6 +62,7 @@ def get_writable_root() -> Path:
         raise RuntimeError("No writable data location found.")
 
 def ensure_write_dirs():
+    # create folders for data saving
     (WRITE_ROOT / RT_SUBDIR).mkdir(parents=True, exist_ok=True)
     (WRITE_ROOT / INV_SUBDIR).mkdir(parents=True, exist_ok=True)
     (WRITE_ROOT / INV_MATRIX_SUBDIR).mkdir(parents=True, exist_ok=True)
@@ -68,20 +72,24 @@ def ensure_write_dirs():
 
 
 def get_or_create_raytracing(ParamsMachine, ParamsGrid) -> Path:
+    #return path name of transfert matrix dataset from raytracing. Creates the dataset if it does not exist. 
     ensure_write_dirs()
 
+    #get unique name for given parameters
     machine_hash = utility_functions.hash_params(ParamsMachine.to_dict())
     grid_hash = utility_functions.hash_params(ParamsGrid.to_dict())
     rt_hash = machine_hash+grid_hash
     name = f"rt_{rt_hash}.zarr"
 
+    #check if file is already created, returns its path if yes
     existing = find_existing(RT_SUBDIR, name)
     if existing:
         return existing
 
-    # Must be computed locally
+    #full path name of dataset
     path = WRITE_ROOT / RT_SUBDIR / name
 
+    #creates dataset
     ds = fonction_tomo.compute_raytracing(ParamsMachine, ParamsGrid)
     ds.attrs.update({
         "stage": "raytracing",
@@ -90,7 +98,7 @@ def get_or_create_raytracing(ParamsMachine, ParamsGrid) -> Path:
         "version": version,
         "date": date,
     })
-
+    #save dataset for later use
     ds.to_zarr(path, mode="w")
     return path
 
