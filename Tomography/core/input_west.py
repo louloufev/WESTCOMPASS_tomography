@@ -121,7 +121,18 @@ ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
                                                     c = c, 
                                                     class_name = 'ParamsVid')
 
+ParamsVideo = result_inversion.ParamsVideo(nshot = nshot,
+                                                    path_vid = path_vid,
+                                                    dict_vid = dict_vid,
+                                                    time_input =time_input,
+                                                    frame_input = frame_input,
+                                                    )
+
+ParamsInversion = result_inversion.ParamsInversion(inversion_method = inversion_method,
+                                                    inversion_parameter = inversion_parameter,
+                                                    )
 
 
-def load_Params():
-    return ParamsMachine, ParamsGrid, ParamsVid
+
+def load_input():
+    return ParamsMachine, ParamsGrid, ParamsVideo, ParamsInversion
