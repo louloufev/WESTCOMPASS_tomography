@@ -120,3 +120,8 @@ ParamsVid = result_inversion.ParamsVid(inversion_method = inversion_method,
                                                     inversion_parameter = inversion_parameter,
                                                     c = c, 
                                                     class_name = 'ParamsVid')
+
+
+
+def load_Params():
+    return ParamsMachine, ParamsGrid, ParamsVid

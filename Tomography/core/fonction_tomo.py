@@ -23,7 +23,7 @@ from cherab.tools.primitives.axisymmetric_mesh import axisymmetric_mesh_from_pol
 from cherab.tools.raytransfer import RoughIron, RoughTungsten, RoughSilver
 
 #raysect imports
-from raysect.optical import World, Node, translate, rotate, Point3D, rotate_z
+from raysect.optical import World, Node, translate, rotate, Point3D, rotate_z, Vector3D
 from raysect.optical.observer import PinholeCamera, FullFrameSampler2D, RGBPipeline2D, VectorCamera,  RGBAdaptiveSampler2D
 from raysect.primitive import import_stl, import_obj, Box, import_ply
 from raysect.optical.material import UniformVolumeEmitter, AbsorbingSurface, Lambert
@@ -664,7 +664,9 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
         true_nodes = np.flatnonzero(RZ_mask_grid)
         mask_node = np.zeros_like(RZ_mask_grid, dtype = bool)
         mask_node.ravel()[true_nodes[node]] = True
+        node2, = np.where(true_nodes)
     mask_node = np.squeeze(mask_node)
+    pdb.set_trace()
     print('shape voxel_map ', plasma2.voxel_map.shape)
     print('shape mask_node ', mask_node.shape)
     
@@ -1069,7 +1071,7 @@ def setup_raytracing_world(ParamsMachine, ParamsGrid):
 
 
     full_wall = load_walls(ParamsMachine, world)
-    print('walls loaded, with components {}'.format([wall.name for wall in full_wall]))
+    # print('walls loaded, with components {}'.format([wall.name for wall in full_wall]))
     #calculate transfert matrix
     return world, RZwall
 
@@ -1394,3 +1396,205 @@ class maskAccessor:
 
 
         return ax
+    
+
+
+
+def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None):
+    from scipy.io import loadmat
+    LOS = loadmat('/Home/NF216031/MATLAB_NF/WEST_functions/DVIS/LOS_position_name.mat', struct_as_record=False, squeeze_me=True)
+    LOS =utility_functions.matstruct_to_dict(LOS['dat'])
+    if name is None:
+        ind_LODIV = [i for i, x in enumerate(LOS.name) if 'LODIV' in x]
+        name = LOS.name[ind_LODIV]
+    else:
+        R1, Z1 ,PHI1, X1, Y1, R2, Z2, PHI2 = get_LOS_spectrometer(name)
+    
+    offset_angles = np.mean(PHI1)
+    PHI1 = PHI1-offset_angles+200 #place the LOS inside the cut part of the tokamak
+    PHI2 = PHI2-offset_angles+200 #apply same shift to endpoints
+    deg2rad = np.pi/180
+    X1 = R1*np.cos(PHI1*deg2rad)
+    Y1 = R1*np.sin(PHI1*deg2rad)
+    X2 = R2*np.cos(PHI2*deg2rad)
+    Y2 = R2*np.sin(PHI2*deg2rad)
+    x = X2-X1
+    y = Y2-Y1
+    z = Z2-Z1
+
+    LOS =LOS
+    p = np.vstack((x, y, z)).T
+
+    # Direction vectors
+
+    # Compute magnitudes
+    mag = np.linalg.norm(p, axis=1, keepdims=True)
+
+    # Avoid divide-by-zero
+    mag[mag == 0] = np.nan
+
+    # Normalize
+    v_norm = p / mag
+    pixel_origins = np.array([Point3D(X1[i], Y1[i], Z1[i]) for i in range(X1.shape[0])])
+
+    pixel_directions = np.array([Vector3D(v_norm[v, 0], v_norm[v, 1], v_norm[v, 2]) for v in range(v_norm.shape[0])])
+    world = World()
+    # wall_CAD = read_CAD_from_components(ParamsMachine, world)
+
+    if ParamsMachine.path_wall:
+        try:
+            fwall = loadmat(ParamsMachine.path_wall)
+            RZwall = fwall['RZwall']
+
+        except:
+            RZwall = np.load(ParamsMachine.path_wall, allow_pickle=True)
+        #check that the last element is the neighbor of the first one and not the same one
+        if(RZwall[0]==RZwall[-1]).all():
+            RZwall = RZwall[:-1]
+            print('erased last element of wall')
+        #check that the wall coordinates are stocked in a counter clockwise position. If not, reverse it
+        Trigo_orientation, signed_area = utility_functions.polygon_orientation(RZwall[:, 0], RZwall[:, 1])
+        if Trigo_orientation:
+            RZwall = RZwall[::-1]
+            print('wall reversed')
+
+        R_wall = RZwall[:, 0]
+        Z_wall = RZwall[:, 1]
+    else:
+        RZwall = None
+
+    R_wall = RZwall[:, 0]
+    Z_wall = RZwall[:, 1]
+
+    wall_limit = axisymmetric_mesh_from_polygon(RZwall)
+    flag_wall_limit = 0
+    if flag_wall_limit:
+        name_wall_material = 'tungsten'
+        wall_limit.parent = world
+        if name_wall_material == 'absorbing surface':
+            wall_limit.material = AbsorbingSurface()
+        else:
+            wall_limit.material = RoughTungsten(0.5)
+    else:
+        full_wall = load_walls(ParamsMachine, world)
+
+    
+    if ParamsMachine.machine == 'WEST':
+        R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[3.129871200000000, 1.834345700000000,0.798600000000000,-0.789011660000000]
+    
+       
+    if ParamsGrid.extra_steps:
+        R_max_noeud = R_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dr_grid
+        R_min_noeud = R_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dr_grid
+        Z_max_noeud = Z_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dz_grid
+        Z_min_noeud = Z_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dz_grid
+    extent_RZ =[R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud] 
+    nb_noeuds_r = int((R_max_noeud-R_min_noeud)/ParamsGrid.dr_grid)
+    nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/ParamsGrid.dz_grid)
+    cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, ParamsGrid.crop_center, ParamsGrid)
+    # The RayTransferCylinder object is fully 3D, but for simplicity we're only
+    # working in 2D as this case is axisymmetric. It is easy enough to pass 3D
+    # views of our 2D data into the RayTransferCylinder object: we just ues a
+    # numpy.newaxis (or equivalently, None) for the toroidal dimension.
+    grid_mask = grid_mask[:, np.newaxis, :]
+    
+    n_polar = 1
+    RZ_mask_grid = np.copy(grid_mask)
+    grid_mask = np.tile(grid_mask, (1, n_polar, 1))
+    num_points_rz = nb_noeuds_r*nb_noeuds_z
+    step = 1e-4
+    plasma2 = RayTransferCylinder(radius_outer=cell_r[-1],
+                                        radius_inner=cell_r[0],
+                                        height=cell_z[-1] - cell_z[0],
+                                        n_radius=nb_noeuds_r, n_height=nb_noeuds_z, 
+                                        step=step, n_polar=n_polar, 
+                                        parent = world, transform=translate(0, 0, cell_z[0]))
+ 
+    real_pipeline = RayTransferPipeline2D()
+    
+    camera = VectorCamera(pixel_origins[np.newaxis, :], pixel_directions[np.newaxis, :], parent = world)
+    pixel_samples = 100
+    # TRANSFORM = translate()
+    camera.frame_sampler=FullFrameSampler2D()
+    camera.pipelines=[real_pipeline]
+    camera.pixel_samples = pixel_samples
+    camera.min_wavelength = 640
+    camera.max_wavelength = camera.min_wavelength +1
+    camera.render_engine.processes = 32
+    camera.spectral_bins = plasma2.bins
+    camera.observe()
+    pipelines = camera.pipelines[0]
+    print('shape full transfert matrix = ' + str(pipelines.matrix.shape))
+    flattened_matr = pipelines.matrix.reshape(pipelines.matrix.shape[0] * pipelines.matrix.shape[1], pipelines.matrix.shape[2])
+    
+    if flattened_matr.shape[1] > num_points_rz:
+        #some elements of the grid don't see the field lines. Checking if they are out of the field of view of the camera
+        invisible_nodes = np.sum(flattened_matr, 0)[-1]
+        if invisible_nodes>0:
+            print('nodes not seen, choose bigger grid limits, or wall limits differ between CAD model and magnetic equilibrium')
+            # pdb.set_trace()
+        flattened_matr = flattened_matr[:, :-1]
+    print('flattened_matr shape', flattened_matr.shape)
+
+
+    pixels,  = np.where(np.sum(flattened_matr, 1)) #sum over nodes
+    noeuds,  = np.where(np.sum(flattened_matr, 0)) #sum over pixels
+    #save results
+
+    mask_pixel = np.zeros(flattened_matr.shape[0], dtype = bool)
+    mask_pixel[pixels] = True
+    mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
+
+    mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
+    rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
+    mask_noeud[rows_noeud,indphi, cols_noeud] = True
+    print('shape voxel_map ', plasma2.voxel_map.shape)
+    print('shape mask_noeud ', mask_noeud.shape)
+    
+    transfert_matrix = flattened_matr[pixels,:][:, noeuds]
+
+    nb_visible_noeuds = len(np.unique(noeuds))
+    nb_vision_pixel = len(np.unique(pixels))
+    print('visible node = ' + str(nb_visible_noeuds) + 'out of ' + str(nb_noeuds_r*nb_noeuds_z))
+    print('vision pixels = ' + str(nb_vision_pixel) + 'out of ' + str(pipelines.matrix.shape[0] * pipelines.matrix.shape[1]))
+
+    transfert_matrix = csr_matrix(transfert_matrix)
+    print(transfert_matrix.shape)
+    pixels = np.squeeze(pixels)
+    noeuds = np.squeeze(noeuds)
+
+
+    name_folder = 'mat_saves/'
+    name_material = ParamsMachine.name_material.split('/')[-1]
+    if os.path.splitext(ParamsMachine.path_CAD)[1]:
+        name_CAD = os.path.splitext(ParamsMachine.path_CAD)[1]
+    else:
+        name_CAD = ParamsMachine.path_CAD.split('/')[-2]
+    if flag_wall_limit:
+        name_CAD = '2D_wall_mesh'
+        name_material = name_wall_material
+    dict_spectro = dict(R1 = R1, R2= R2, Z1=Z1, Z2= Z2, grid_mask = grid_mask, extent_RZ = extent_RZ, R_wall = R_wall,  Z_wall= Z_wall, transfert_matrix = transfert_matrix, mask_pixel= mask_pixel, mask_noeud= mask_noeud,  pipelines= pipelines, cell_r = cell_r, cell_z= cell_z)
+    savemat(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'spectro_los.mat', dict_spectro)
+    utility_functions.plot_image(np.squeeze(mask_noeud).T, extent = extent_RZ, origin = 'lower')
+    plt.savefig(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'view spectro los.png')
+    plt.close()
+    return R1, R2, Z1, Z2, grid_mask, extent_RZ, R_wall, Z_wall, transfert_matrix, mask_pixel, mask_noeud, pipelines, cell_r, cell_z
+
+def get_LOS_spectrometer(name):
+    from scipy.io import loadmat
+    LOS = loadmat('/Home/NF216031/MATLAB_NF/WEST_functions/DVIS/LOS_position_name.mat', struct_as_record=False, squeeze_me=True)
+    LOS =utility_functions.matstruct_to_dict(LOS['dat'])
+    ind_LODIV = [i for i, x in enumerate(LOS.name) if x in name]
+    print(ind_LODIV)
+    if len(ind_LODIV)!= len(name):
+        raise(ValueError('Not all LOS found, check syntax of your name'))
+    name = LOS.name[ind_LODIV]
+    R1 = LOS.R1[ind_LODIV]
+    Z1 = LOS.Z1[ind_LODIV]
+    PHI1 = 200*np.pi/180
+    X1 = R1*np.cos(PHI1)
+    Y1 = R1*np.sin(PHI1)
+    R2 = LOS.R2[ind_LODIV]
+    Z2 = LOS.Z2[ind_LODIV]
+    PHI2 = LOS.PHI2[ind_LODIV]
+    return R1, Z1 ,PHI1, X1, Y1, R2, Z2, PHI2 
