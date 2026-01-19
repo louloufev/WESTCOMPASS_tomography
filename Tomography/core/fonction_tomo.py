@@ -749,6 +749,7 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
     mask_pixel = np.zeros(flattened_matr.shape[0], dtype = bool)
     mask_pixel[pixel] = True
     mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
+    transfert_matrix = flattened_matr[pixel,:][:, node]
 
     # x, y, z = np.where(RZ_mask_grid)
     # x = x[node]
@@ -758,17 +759,16 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
         mask_node = np.zeros_like(RZ_mask_grid, dtype = bool)
         rows_noeud, indphi, cols_noeud = np.unravel_index(node, mask_node.shape)
         mask_node[rows_noeud,indphi, cols_noeud] = True
-        true_nodes = node
     elif ParamsGrid.symetry == 'toroidal':
         true_nodes = np.flatnonzero(RZ_mask_grid)
         mask_node = np.zeros_like(RZ_mask_grid, dtype = bool)
         mask_node.ravel()[true_nodes[node]] = True
+        node = np.flatnonzero(mask_node)
     mask_node = np.squeeze(mask_node)
     print('shape voxel_map ', plasma2.voxel_map.shape)
     print('shape mask_node ', mask_node.shape)
     
-    transfert_matrix = flattened_matr[pixel,:][:, node]
-
+    
     nb_visible_node = len(np.unique(node))
     nb_vision_pixel = len(np.unique(pixel))
     print('visible node = ' + str(nb_visible_node) + 'out of ' + str(nb_node_r*nb_node_z))
@@ -776,12 +776,12 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
 
     print(transfert_matrix.shape)
     pixel = np.squeeze(pixel)
-    true_nodes = np.squeeze(true_nodes)
+    true_nodes = np.squeeze(node)
     
     print('shape reduced transfert matrix = ' + str(transfert_matrix.shape))
-    rows_node, cols_node = np.unravel_index(true_nodes, mask_node.shape)
+    rows_node, cols_node = np.unravel_index(node, mask_node.shape)
     rows_pixel, cols_pixel = np.unravel_index(pixel, mask_pixel.shape)
-    return transfert_matrix, mask_node, mask_pixel, true_nodes, pixel, rows_node, cols_node, rows_pixel, cols_pixel, cell_r, cell_z
+    return transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel, cell_r, cell_z
 
 
 
