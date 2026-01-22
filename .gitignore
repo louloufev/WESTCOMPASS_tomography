@@ -19,3 +19,6 @@ __pycache__/
 *.pyd
 *.nbc
 *.nbi
+index.xlsx
+~$index.xlsx
+

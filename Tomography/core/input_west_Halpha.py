@@ -33,8 +33,8 @@ symetry = 'toroidal' #hypothesis on the emissivity uniformity. Can be set to 'to
 # parameters for dimension of the 2D plane
 phi_grid = None #toroidal angle (in degrees)
 n_polar = None # number of toroidal points in 1 revolution for magnetic lines(only relevant for magnetic symmetry. Set to 1 for toroidal symmetry)
-dr_grid = 20e-3 #radius step of 2D grid
-dz_grid = 20e-3 #height step of 2D grid
+dr_grid = 5e-3 #radius step of 2D grid
+dz_grid = 5e-3 #height step of 2D grid
 extra_steps = None
 # This dictionnary is there to add more parameters to the raytracing. See the function full_inversion_toroidal for help
 grid_precision_multiplier = None
@@ -58,7 +58,7 @@ inversion_parameter = {}
 
     # min_visibility_node : 
 
-decimation = None# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
+decimation = 2# int : used to average camera data into blocks of pixels; useful for large number of pixels. 
     # decimation = 1 : takes all pixels
     # decimation = 2 : takes the mean value of 2*2 pixel block, effectively dividing by 4 the number of pixels
 
@@ -80,9 +80,9 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 
 
 # parameter for the number of the shot
-nshot_grid =61600
+nshot_grid =61357
 nshot =None
-path_vid = 'Tomography/ressources/61600 first XPR_S0001'
+path_vid = 'Tomography/ressources/61357 transition XPR_S0001'
 
 
 #####

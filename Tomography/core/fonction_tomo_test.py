@@ -28,7 +28,7 @@ from . import utility_functions, result_inversion
 import tkinter as tk
 from tkinter import filedialog
 
-from .inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, reconstruct_2D_image, inverse_vid_from_class
+from Tomography.core.inversion_module import prep_inversion, inverse_vid, inversion_and_thresolding, synth_inversion, reconstruct_2D_image, inverse_vid_from_class
 from Tomography.ressources import components, paths
 
 #### yaml files

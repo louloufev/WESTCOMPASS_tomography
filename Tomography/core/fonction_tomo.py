@@ -1499,16 +1499,25 @@ class maskAccessor:
 
 
 
-def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None):
+def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None, save = 0):
     from scipy.io import loadmat
     LOS = loadmat('/Home/NF216031/MATLAB_NF/WEST_functions/DVIS/LOS_position_name.mat', struct_as_record=False, squeeze_me=True)
     LOS =utility_functions.matstruct_to_dict(LOS['dat'])
     if name is None:
         ind_LODIV = [i for i, x in enumerate(LOS.name) if 'LODIV' in x]
         name = LOS.name[ind_LODIV]
+        R1 = LOS.R1[ind_LODIV]
+        Z1 = LOS.Z1[ind_LODIV]
+        PHI1 = LOS.PHI1[ind_LODIV]
+        R2 = LOS.R2[ind_LODIV]
+        Z2 = LOS.Z2[ind_LODIV]
+        PHI2 = LOS.PHI2[ind_LODIV]
     else:
         R1, Z1 ,PHI1, X1, Y1, R2, Z2, PHI2 = get_LOS_spectrometer(name)
     
+
+
+
     offset_angles = np.mean(PHI1)
     PHI1 = PHI1-offset_angles+200 #place the LOS inside the cut part of the tokamak
     PHI2 = PHI2-offset_angles+200 #apply same shift to endpoints
@@ -1601,7 +1610,7 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None):
     RZ_mask_grid = np.copy(grid_mask)
     grid_mask = np.tile(grid_mask, (1, n_polar, 1))
     num_points_rz = nb_noeuds_r*nb_noeuds_z
-    step = 1e-4
+    step = 1e-5
     plasma2 = RayTransferCylinder(radius_outer=cell_r[-1],
                                         radius_inner=cell_r[0],
                                         height=cell_z[-1] - cell_z[0],
@@ -1612,7 +1621,7 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None):
     real_pipeline = RayTransferPipeline2D()
     
     camera = VectorCamera(pixel_origins[np.newaxis, :], pixel_directions[np.newaxis, :], parent = world)
-    pixel_samples = 100
+    pixel_samples = ParamsGrid.pixel_samples
     # TRANSFORM = translate()
     camera.frame_sampler=FullFrameSampler2D()
     camera.pipelines=[real_pipeline]
@@ -1672,11 +1681,12 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None):
     if flag_wall_limit:
         name_CAD = '2D_wall_mesh'
         name_material = name_wall_material
-    dict_spectro = dict(R1 = R1, R2= R2, Z1=Z1, Z2= Z2, grid_mask = grid_mask, extent_RZ = extent_RZ, R_wall = R_wall,  Z_wall= Z_wall, transfert_matrix = transfert_matrix, mask_pixel= mask_pixel, mask_noeud= mask_noeud,  pipelines= pipelines, cell_r = cell_r, cell_z= cell_z)
-    savemat(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'spectro_los.mat', dict_spectro)
-    utility_functions.plot_image(np.squeeze(mask_noeud).T, extent = extent_RZ, origin = 'lower')
-    plt.savefig(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'view spectro los.png')
-    plt.close()
+    if save:
+        dict_spectro = dict(R1 = R1, R2= R2, Z1=Z1, Z2= Z2, grid_mask = grid_mask, extent_RZ = extent_RZ, R_wall = R_wall,  Z_wall= Z_wall, transfert_matrix = transfert_matrix, mask_pixel= mask_pixel, mask_noeud= mask_noeud,  pipelines= pipelines, cell_r = cell_r, cell_z= cell_z)
+        savemat(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'spectro_los.mat', dict_spectro)
+        utility_functions.plot_image(np.squeeze(mask_noeud).T, extent = extent_RZ, origin = 'lower')
+        plt.savefig(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'view spectro los.png')
+        plt.close()
     return R1, R2, Z1, Z2, grid_mask, extent_RZ, R_wall, Z_wall, transfert_matrix, mask_pixel, mask_noeud, pipelines, cell_r, cell_z
 
 def get_LOS_spectrometer(name):

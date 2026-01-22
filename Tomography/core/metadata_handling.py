@@ -3,6 +3,8 @@ import os
 import json
 import xarray as xr
 from Tomography.core import result_inversion, fonction_tomo, utility_functions
+import pandas as pd
+import pdb
 from datetime import datetime
 if 'compass' in os.getcwd():
 # Read-only locations (NFS, Windows server, etc.)
@@ -17,7 +19,9 @@ else:
     # Read-only locations (NFS, Windows server, etc.)
     READ_ROOTS = [
         Path("/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/"),
-        Path("/Home/LF285735/Documents/Python/mnt/nunki/camera_rapide/Images CCD rapide/Tomographic_Inversion"),   # NFS mount (read-only)
+        Path("/Home/LF285735/Documents/Python/mnt/nunki/camera_rapide/Images CCD rapide/Tomographic_Inversion/"),
+        Path("/Home/LF285735/Documents/Python/mnt/nunki/camera_rapide/Images CCD rapide/"),   # NFS mount (read-only)
+        Path("/Home/LF285735/Zone_Travail/")
     ]
 
     # Single writable location (Linux local/server)
@@ -31,8 +35,11 @@ INV_MATRIX_SUBDIR = "inversion_matrix"
 TREATED_VIDEOS_SUBDIR = "treated_videos"
 DENOISING_SUBDIR = "denoising"
 
+
+SUBDIRS = [RT_SUBDIR, INV_SUBDIR, TREATED_VIDEOS_SUBDIR, DENOISING_SUBDIR]
+
 date = datetime.now().isoformat()
-version = 1.0
+version = 1.2
 
 def find_existing(subdir: str, name: str):
     # Look for file in each root folders. returns path if it exists
@@ -204,3 +211,178 @@ def get_or_create_denoising(ParamsMachine, ParamsGrid, ParamsVideo, ParamsInvers
 
     denoising_ds.to_zarr(path, mode="w")
     return path
+
+
+
+
+def parse_subdir(subdir: str):
+    # Look for file in each root folders. returns path if it exists
+    paths = []
+    # First check writable root (most recent data)
+    path = WRITE_ROOT / subdir 
+    if path.exists():
+        paths.append(path)
+
+    # Then check read-only roots
+    for root in READ_ROOTS:
+        path = root / subdir 
+        if path.exists():
+            paths.append(path)
+
+    return paths
+
+def create_index_inversion(excel_path):
+    directories = parse_subdir('inversion')
+
+    collect_zarr_metadata_to_excel(directories,
+    'ParamsInversion',
+    excel_path,
+    sheet_name="index")
+
+
+
+
+
+def collect_zarr_metadata_to_excel(
+    directories,
+    excel_path,
+    
+    stage_attr="stage",
+    sheets=("raytracing", "treatment videos", "inversion", "denoising"),
+):
+    excel_path = Path(excel_path)
+
+    # Load existing Excel sheets (if file exists)
+    existing = {}
+    if excel_path.exists():
+        with pd.ExcelFile(excel_path) as xls:
+            for sheet in sheets:
+                if sheet in xls.sheet_names:
+                    existing[sheet] = pd.read_excel(xls, sheet)
+                else:
+                    existing[sheet] = pd.DataFrame()
+    else:
+        existing = {sheet: pd.DataFrame() for sheet in sheets}
+
+    # Track existing zarr names per sheet
+    existing_names = {
+        sheet: set(df["zarr_name"]) if "zarr_name" in df else set()
+        for sheet, df in existing.items()
+    }
+
+    new_records = {sheet: [] for sheet in sheets}
+
+    # Scan directories
+    for base_dir in directories:
+        base_dir = Path(base_dir)
+        if not base_dir.exists():
+            continue
+
+        for zarr_path in base_dir.rglob("*.zarr"):
+            zarr_name = zarr_path.name
+
+            try:
+                ds = xr.open_zarr(zarr_path, consolidated=False)
+            except Exception as e:
+                print(f"[WARN] Cannot open {zarr_path}: {e}")
+                continue
+
+            stage = ds.attrs.get(stage_attr)
+            if stage not in sheets:
+                continue
+
+            if zarr_name in existing_names[stage]:
+                continue  # already indexed
+            if stage == "raytracing":
+                params_machine = ds.attrs.get(
+                    "ParamsMachine"
+                )
+                params_grid = ds.attrs.get(
+                    "ParamsGrid"
+                )
+                try:
+                    params = {**params_machine, **params_grid}
+                except:
+                    print(f"[WARN] {zarr_path} missing params dict")
+                    continue
+            elif stage == "inversion":
+                params = ds.attrs.get(
+                    "ParamsInversion" 
+                )
+            elif stage == "denoising":
+                params = ds.attrs.get(
+                    "ParamsDenoising" 
+                )
+            elif stage == "treatment videos":
+                params = ds.attrs.get(
+                    "ParamsVideo" 
+                )
+
+            if not isinstance(params, dict):
+                print(f"[WARN] {zarr_path} missing params dict")
+                continue
+
+            row = {
+                "zarr_name": zarr_name,
+                "zarr_path": str(zarr_path),
+            }
+            row.update(params)
+            new_records[stage].append(row)
+
+    # Write back to Excel
+    with pd.ExcelWriter(excel_path, engine="openpyxl", mode="w") as writer:
+        for sheet in sheets:
+            old_df = existing[sheet]
+            new_df = pd.DataFrame(new_records[sheet])
+
+            if not new_df.empty:
+                combined = pd.concat([old_df, new_df], ignore_index=True)
+            else:
+                combined = old_df
+
+            combined.to_excel(writer, sheet_name=sheet, index=False)
+
+    print(f"Zarr metadata index updated: {excel_path}")
+
+
+
+
+def cleanup_old_version_files(directory, max_version, dry_run=True):
+    #scan all zarr files in directory, returning all those with version < max_version
+    # set dry_run to false to effectively remove those files
+    #  
+    paths = []
+    if not dry_run:
+        Warning(f"careful all file with version strictly lower than {max_version} will be removed ! Continue ? [Y/n]")
+        remove_file_flag = input("type Y to continue with removal")
+        if remove_file_flag!= "Y":
+            print("aborting removal")
+            return paths
+        else:
+            print("proceeding with file removal")
+    
+    for path in directory.glob("*.zarr"):
+        
+        try:
+            ds = xr.open_zarr(path, consolidated=False)
+        except Exception as e:
+            print(f"[WARN] Cannot open {path}: {e}")
+            continue
+        version_file = ds.version
+        if version_file < max_version:
+            if dry_run:
+                print("[DRY RUN] Would remove:", path)
+                paths.append(path)
+            else:
+                print("Removing:", path)
+                __import__("shutil").rmtree(path)
+                paths.append(path)
+    return paths
+
+def scan_zarr_for_index(excel_path = "index.xlsx"):
+    for subdir in SUBDIRS:
+        directories = parse_subdir(subdir)
+        collect_zarr_metadata_to_excel(
+            directories,
+            excel_path)
+            

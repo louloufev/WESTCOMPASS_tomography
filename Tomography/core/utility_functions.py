@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pdb
 import os
 import imageio
-from .inversion_module import reconstruct_2D_image
+from Tomography.core.inversion_module import reconstruct_2D_image
 from typing import Optional, Tuple
 import re
 from scipy.sparse import isspmatrix
@@ -987,6 +987,7 @@ def get_vid(ParamsVid):
             image_dim_y = data['Image Height']
             image_dim_x = data['Image Width']
             NF = data['Total Frame']
+            frame_start = data["Record Rate(fps)"]
             try:
                 t_start = campaign_metadata.sel(nshots = nshot).t_start.values
             except:
@@ -1035,7 +1036,7 @@ def get_vid(ParamsVid):
         else:
             frame_input = [0, NF-1]
     
-        t0 = t_start+frame_input[0]/fps
+        t0 = t_start+frame_input[0]/fps +frame_start/fps
 
     else:
         RIS_number = 3
@@ -1553,3 +1554,248 @@ def normalize_params(obj):
     else:
         return obj
     
+
+def plot_west_separatrix(nshot, t = None, ax = None):
+    out = load_west_equilibrium(nshot)
+    r = out['r']
+    z = out['z']
+    psi = out['psi']
+    time = out['time']
+    psisep = out['psisep']
+    time[np.isnan(time)] = 0
+    if t is None:
+        ind_t = len(time)//2
+    else:
+        ind_t = np.argmin(np.abs(time-t))
+
+    if ax is None:
+        ax = plt.gca()
+
+    psi_plot = psi[ind_t, :, :]
+    psi_sep = psisep[ind_t]
+    ax.contour(r, z, psi_plot, levels = [psi_sep])
+    return r, z, psi, time
+
+
+
+
+def get_nshot_video(ParamsVideo):
+    if ParamsVideo.nshot is not None:
+        return ParamsVideo.nshot
+    else:
+        nshot = int(first_5_consecutive_digits(os.path.basename(ParamsVideo.path_vid)))
+        return nshot
+    
+
+
+
+def run_matlab_function_with_dynamic_script(func_name, *args, output_var='', output_file='output.mat', func_dir=None):
+    from scipy.io import loadmat
+    """
+    Crée un script MATLAB à la volée qui appelle une fonction MATLAB avec les arguments donnés,
+    puis exécute ce script via subprocess.
+
+    - func_name : nom de la fonction MATLAB (string, sans .m)
+    - *args : arguments à passer à la fonction MATLAB (numériques ou strings)
+    - output_var : nom de la variable retournée dans MATLAB
+    - output_file : fichier temporaire utilisé pour sauver les données
+    - func_dir : répertoire où se trouve la fonction MATLAB (optionnel)
+    """
+    # Construction des arguments MATLAB à passer à la fonction
+    matlab_args = ', '.join([f"'{arg}'" if isinstance(arg, str) else str(arg) for arg in args])
+
+    # Chemin absolu du fichier de sortie
+    output_path = os.path.abspath(output_file)
+
+    # Créer le contenu du script MATLAB à la volée
+    script_name = 'script_surmesure.m'
+    script_content = f"""
+success = false;
+error_message = '';
+try
+    % Ajouter le répertoire contenant la fonction si spécifié
+    if exist('{func_dir}', 'dir')
+        addpath('{func_dir}');
+    end
+
+    n = nargout('{func_name}');
+    if n < 0
+        tmp = cell(1, 4);
+        [tmp{{:}}] = {func_name}({matlab_args});
+        data = tmp(~cellfun('isempty', tmp));
+    else
+        tmp = cell(1, n);
+        [tmp{{:}}] = {func_name}({matlab_args});
+        data = tmp;
+    end
+
+    success = true;
+
+catch ME
+    error_message = ME.message;
+    data = '';
+
+end
+
+save('{output_path}', 'success', 'error_message', 'data');
+exit;
+"""
+
+    # Sauvegarder le script dans un fichier .m
+    with open(script_name, 'w') as f:
+        f.write(script_content)
+
+    # Construction de la commande MATLAB
+    cmd = f'''matlab -nodisplay -nosplash -nodesktop -r "addpath('{os.getcwd()}'); run('{script_name}');"'''
+
+    # Afficher la commande pour débugger
+    print("Commande MATLAB :", cmd)
+
+    # Exécution de la commande via subprocess
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+    print("-------- MATLAB STDOUT --------")
+    print(result.stdout)
+    print("-------- MATLAB STDERR --------")
+    print(result.stderr)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Erreur dans MATLAB : code {result.returncode}")
+
+    if not os.path.exists(output_path):
+        raise FileNotFoundError(f"MATLAB n'a pas créé le fichier attendu : {output_path}")
+
+    # Lecture du fichier .mat et retour du résultat
+    mat_data = loadmat(output_path)
+    
+    # Suppression du script temporaire
+    os.remove(script_name)
+
+    if not mat_data['success']:
+        print(mat_data["error_message"])
+        raise ProcessLookupError("error in the matlab script")
+        
+    # Conversion de la structure MATLAB en dictionnaire Python
+    mat_array = mat_data['data']
+    # MATLAB cell array → Python list
+    outputs = [mat_array[0, i] for i in range(mat_array.shape[1])]
+    
+    
+
+    return outputs
+
+#####EXEMPLE:
+# shot = 57617
+# bolo = run_matlab_function_with_dynamic_script("BOLO2em", shot, 'bolo')
+# intref = bolo = run_matlab_function_with_dynamic_script("INTREF2ne", shot, 'refl', 'Both')
+
+
+
+
+def run_matlab_vista(*args, output_file='output.mat', func_dir=None):
+    from scipy.io import loadmat
+    """
+    Crée un script MATLAB à la volée qui appelle une fonction MATLAB avec les arguments donnés,
+    puis exécute ce script via subprocess.
+
+    - func_name : nom de la fonction MATLAB (string, sans .m)
+    - *args : arguments à passer à la fonction MATLAB (numériques ou strings)
+    - output_var : nom de la variable retournée dans MATLAB
+    - output_file : fichier temporaire utilisé pour sauver les données
+    - func_dir : répertoire où se trouve la fonction MATLAB (optionnel)
+    """
+    func_name = 'vista'
+    # Construction des arguments MATLAB à passer à la fonction
+    matlab_args = ', '.join([f"'{arg}'" if isinstance(arg, str) else str(arg) for arg in args])
+
+    # Chemin absolu du fichier de sortie
+    output_path = os.path.abspath(output_file)
+
+    # Créer le contenu du script MATLAB à la volée
+    script_name = 'script_surmesure.m'
+    script_content = f"""
+    
+try
+    error_message = ''
+    success = true
+    % Ajouter le répertoire contenant la fonction si spécifié
+    if exist('{func_dir}', 'dir')
+        addpath('{func_dir}');
+    end
+    
+    % Appeler la fonction MATLAB avec les arguments
+
+    tmp = cell(1, 4);
+    [tmp{{:}}] = {func_name}({matlab_args});
+    data = tmp(~cellfun('isempty', tmp));
+    data = data{{end}}
+
+    % reformule les données matlab pour python
+    spectro = data.spectro;
+
+    name_LOS = table2array(data.LOS_distribution(:, 2))
+    num_los = length(name_LOS)
+
+    wavelength = data.raw_data.calibrated.wavelength;
+
+    time = data.raw_data.calibrated.time_vector;
+    
+    raw_data = zeros(length(wavelength), length(time), num_los);
+    raw_data(:) = cell2mat(data.raw_data.calibrated.data);
+
+    intensity_unit = data.integrated_data.calibrated.intensity_unit;
+    integrated_data =  zeros(length(time), num_los);
+    integrated_data(:) = cell2mat(data.integrated_data.calibrated.DI_6561);
+    integrated_data = integrated_data
+
+    
+    % Sauvegarder les résultats dans un fichier .mat
+    save('{output_path}', 'spectro', 'name_LOS', 'wavelength', 'time', 'raw_data', 'intensity_unit', 'integrated_data', 'success', 'error_message');
+catch ME
+    disp('Une erreur est survenue');
+    disp(ME.message)
+    error_message = ME.message
+    success = false
+    save('{output_path}', 'success', 'error_message')
+end
+exit;
+"""
+
+    # Sauvegarder le script dans un fichier .m
+    with open(script_name, 'w') as f:
+        f.write(script_content)
+
+    # Construction de la commande MATLAB
+    cmd = f'''matlab -nodisplay -nosplash -nodesktop -r "addpath('{os.getcwd()}'); run('{script_name}');"'''
+
+    # Afficher la commande pour débugger
+    print("Commande MATLAB :", cmd)
+
+    # Exécution de la commande via subprocess
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+    print("-------- MATLAB STDOUT --------")
+    print(result.stdout)
+    print("-------- MATLAB STDERR --------")
+    print(result.stderr)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Erreur dans MATLAB : code {result.returncode}")
+
+    if not os.path.exists(output_path):
+        raise FileNotFoundError(f"MATLAB n'a pas créé le fichier attendu : {output_path}")
+
+    # Lecture du fichier .mat et retour du résultat
+    mat_data = loadmat(output_path)
+    
+    # Suppression du script temporaire
+    os.remove(script_name)
+    
+    if not mat_data['success']:
+        print(mat_data["error_message"])
+        raise ProcessLookupError("error in the matlab script")
+        
+    # Conversion de la structure MATLAB en dictionnaire Python
+    data_dict = {name: mat_data[name] for name in mat_data.keys() if '__' not in name}
+
+    return data_dict
