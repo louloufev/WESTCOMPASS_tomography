@@ -39,7 +39,7 @@ DENOISING_SUBDIR = "denoising"
 SUBDIRS = [RT_SUBDIR, INV_SUBDIR, TREATED_VIDEOS_SUBDIR, DENOISING_SUBDIR]
 
 date = datetime.now().isoformat()
-version = 1.2
+version = 1.4
 
 def find_existing(subdir: str, name: str):
     # Look for file in each root folders. returns path if it exists
@@ -232,12 +232,12 @@ def parse_subdir(subdir: str):
     return paths
 
 def create_index_inversion(excel_path):
-    directories = parse_subdir('inversion')
+    directories = parse_subdir("inversion")
 
     collect_zarr_metadata_to_excel(directories,
-    'ParamsInversion',
     excel_path,
-    sheet_name="index")
+    stage_attr="inversion"
+    )
 
 
 
@@ -306,13 +306,37 @@ def collect_zarr_metadata_to_excel(
                     print(f"[WARN] {zarr_path} missing params dict")
                     continue
             elif stage == "inversion":
-                params = ds.attrs.get(
+                params_machine = ds.attrs.get(
+                    "ParamsMachine"
+                )
+                params_grid = ds.attrs.get(
+                    "ParamsGrid"
+                )
+                params_video = ds.attrs.get(
+                    "ParamsVideo" 
+                )
+                params_inversion = ds.attrs.get(
                     "ParamsInversion" 
                 )
+                params = {**params_machine, **params_grid, **params_video, **params_inversion}
             elif stage == "denoising":
-                params = ds.attrs.get(
+                params_machine = ds.attrs.get(
+                    "ParamsMachine"
+                )
+                params_grid = ds.attrs.get(
+                    "ParamsGrid"
+                )
+                params_video = ds.attrs.get(
+                    "ParamsVideo" 
+                )
+                params_inversion = ds.attrs.get(
+                    "ParamsInversion" 
+                )
+                params_denoising = ds.attrs.get(
                     "ParamsDenoising" 
                 )
+                params = {**params_machine, **params_grid, **params_video, **params_inversion, **params_denoising}
+                
             elif stage == "treatment videos":
                 params = ds.attrs.get(
                     "ParamsVideo" 

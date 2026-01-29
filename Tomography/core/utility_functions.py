@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import pdb
 import os
 import imageio
-from Tomography.core.inversion_module import reconstruct_2D_image
 from typing import Optional, Tuple
 import re
 from scipy.sparse import isspmatrix
@@ -53,7 +52,7 @@ def plot_wall(image_raw = None, xlabel = None, ylabel = None, percentile_inf = N
     fig.tight_layout()
     plt.show(block = False)
 
-def plot_masked_image(image, mask, alpha = 0.5, percentile_inf = None, percentile_sup = None):
+def plot_masked_image(image, mask, alpha = 0.5, percentile_inf = None, percentile_sup = None, extent = None):
     # Superpose 2 images, giving some degree of transparency to mask (0<alpha<1)
     fig, ax = plt.subplots(1,1)
 
@@ -67,8 +66,8 @@ def plot_masked_image(image, mask, alpha = 0.5, percentile_inf = None, percentil
     image_clean = np.copy(image)
     # image_clean[np.invert((image>lower_bound) & (image<upper_bound))] = np.NaN
     
-    ax.imshow(image_clean)
-    ax.imshow(mask, alpha=alpha)
+    ax.imshow(image_clean, extent = extent)
+    ax.imshow(mask, alpha=alpha, cmap = 'gray', extent = extent)
     plt.show(block = False)
     return fig
 
@@ -527,84 +526,6 @@ def save_transposed_image(filename, file_output = None):
         transposed.save(file_output + ext)
 
 
-def create_quick_synth_image(transfert_matrix, mask_noeud, mask_pixel):
-    import random
-    import fonction_tomo
-    visible_nodes, = np.where(mask_noeud.flatten())
-
-    ind_node_1D = random.choice(range(len(visible_nodes)))
-    ind_node_2D = visible_nodes[ind_node_1D]
-
-    synth_node_1D = np.zeros(len(visible_nodes))
-    synth_node_1D[ind_node_1D] = 1
-    synth_node_2D = fonction_tomo.reconstruct_2D_image(synth_node_1D, mask_noeud)
-    synth_image_1D = transfert_matrix.dot(synth_node_1D)
-    synth_image_2D = fonction_tomo.reconstruct_2D_image(synth_image_1D, mask_pixel)
-
-    return synth_node_2D, synth_image_2D
-
-
-def plot_comparison_synth_inversion(transfert_matrix, mask_noeud, mask_pixel, extent_RZ):
-
-
-    synth_node_2D, synth_image_2D = create_quick_synth_image(transfert_matrix, mask_noeud, mask_pixel)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(121)
-    ax.imshow(synth_image_2D.T)
-    ax = fig.add_subplot(122)
-    ax.imshow(synth_node_2D.T, origin = 'lower', extent = extent_RZ )
-    plt.show(block = False)
-    return synth_node_2D, synth_image_2D
-
-
-
-
-
-def plot_comparison_synth_inversion_noise(transfert_matrix, mask_noeud, mask_pixel, extent_RZ, noise = 0, inversion_method = 'lstsq'):
-
-
-    synth_node_2D, synth_node_2D_noise_inversed, synth_image_2D, synth_image_2D_noise = create_quick_synth_image_noise(transfert_matrix, mask_noeud, mask_pixel, noise, inversion_method)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(221)
-    ax.imshow(synth_image_2D.T)
-    ax = fig.add_subplot(222)
-    ax.imshow(synth_node_2D.T, origin = 'lower', extent = extent_RZ )
-    ax = fig.add_subplot(223)
-    ax.imshow(synth_image_2D_noise.T)
-    ax = fig.add_subplot(224)
-    ax.imshow(synth_node_2D_noise_inversed.T, origin = 'lower', extent = extent_RZ )
-    
-    
-    plt.show(block = False)
-    return synth_node_2D, synth_image_2D
-
-
-
-def create_quick_synth_image_noise(transfert_matrix, mask_noeud, mask_pixel, noise, inversion_method):
-    import random
-    import fonction_tomo
-    visible_nodes, = np.where(mask_noeud.flatten())
-
-    ind_node_1D = random.choice(range(len(visible_nodes)))
-    ind_node_2D = visible_nodes[ind_node_1D]
-
-    synth_node_1D = np.zeros(len(visible_nodes))
-    synth_node_1D[ind_node_1D] = 1
-    synth_node_2D = fonction_tomo.reconstruct_2D_image(synth_node_1D, mask_noeud)
-
-    synth_image_1D = transfert_matrix.dot(synth_node_1D)
-    synth_image_2D = fonction_tomo.reconstruct_2D_image(synth_image_1D, mask_pixel)
-    synth_image_2D_noise = synth_image_2D + noise*np.random.normal(loc = 0, scale = synth_image_2D.max(), size = synth_image_2D.shape)
-
-    synth_image_2D_noise_reduced = synth_image_2D_noise[mask_pixel]
-    from inversion_module import inversion_and_thresolding
-    inv_images = inversion_and_thresolding(synth_image_2D_noise_reduced[np.newaxis, :], transfert_matrix, inversion_method, mask = mask_noeud)[0]
-    synth_node_1D_noise_inversed = np.squeeze(inv_images)
-    synth_node_2D_noise_inversed = fonction_tomo.reconstruct_2D_image(synth_node_1D_noise_inversed, mask_noeud)
-    return synth_node_2D, synth_node_2D_noise_inversed, synth_image_2D, synth_image_2D_noise
-
 
 
 def gaussian_blur_video(video, sigma=1):
@@ -612,54 +533,6 @@ def gaussian_blur_video(video, sigma=1):
     return np.array([gaussian_filter(frame, sigma=sigma) for frame in video])
 
 
-
-
-def create_quick_synth_image_noise_nr_nz(nr, nz, transfert_matrix, mask_noeud, mask_pixel, noise, inversion_method):
-    import random
-    import fonction_tomo
-    # visible_nodes, = np.where(mask_noeud.flatten())
-
-    # ind_node_1D = random.choice(range(len(visible_nodes)))
-    # ind_node_2D = visible_nodes[ind_node_1D]
-
-    # synth_node_1D = np.zeros(len(visible_nodes))
-    # synth_node_1D[ind_node_1D] = 1
-    # synth_node_2D = fonction_tomo.reconstruct_2D_image(synth_node_1D, mask_noeud)
-    synth_node_2D = np.zeros(mask_noeud.shape)
-    synth_node_2D[nr, nz] = 1
-    synth_node_1D = synth_node_2D[mask_noeud]
-    synth_image_1D = transfert_matrix.dot(synth_node_1D)
-    synth_image_2D = fonction_tomo.reconstruct_2D_image(synth_image_1D, mask_pixel)
-    synth_image_2D_noise = synth_image_2D + noise*np.random.normal(loc = 0, scale = synth_image_2D.max(), size = synth_image_2D.shape)
-
-    synth_image_2D_noise_reduced = synth_image_2D_noise[mask_pixel]
-    from inversion_module import inversion_and_thresolding
-    inv_images = inversion_and_thresolding(synth_image_2D_noise_reduced[np.newaxis, :], transfert_matrix, inversion_method, mask = mask_noeud)[0]
-    synth_node_1D_noise_inversed = np.squeeze(inv_images)
-    synth_node_2D_noise_inversed = fonction_tomo.reconstruct_2D_image(synth_node_1D_noise_inversed, mask_noeud)
-    return synth_node_2D, synth_node_2D_noise_inversed, synth_image_2D, synth_image_2D_noise
-
-
-
-
-def plot_comparison_synth_inversion_noise_nr_nz(nr, nz, transfert_matrix, mask_noeud, mask_pixel, extent_RZ, noise = 0, inversion_method = 'lstsq'):
-
-
-    synth_node_2D, synth_node_2D_noise_inversed, synth_image_2D, synth_image_2D_noise = create_quick_synth_image_noise_nr_nz(nr, nz,transfert_matrix, mask_noeud, mask_pixel, noise, inversion_method)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(221)
-    ax.imshow(synth_image_2D.T)
-    ax = fig.add_subplot(222)
-    ax.imshow(synth_node_2D.T, origin = 'lower', extent = extent_RZ )
-    ax = fig.add_subplot(223)
-    ax.imshow(synth_image_2D_noise.T)
-    ax = fig.add_subplot(224)
-    ax.imshow(synth_node_2D_noise_inversed.T, origin = 'lower', extent = extent_RZ )
-    
-    
-    plt.show(block = False)
-    return synth_node_2D, synth_image_2D
 
 
 __all__ = ["plot_image"]
@@ -762,9 +635,6 @@ def filename_contains_folder(filename: str, folder: str) -> bool:
     # Split filename into parts and check
     return folder_name in filename_path.split(os.sep)
 
-
-def reconstruct_2D_image_all_slices(x_2d, mask):
-    return np.array([reconstruct_2D_image(arr, mask) for arr in x_2d])
 
 
 def save_array_as_video(array, filename, fps=20):
@@ -987,7 +857,7 @@ def get_vid(ParamsVid):
             image_dim_y = data['Image Height']
             image_dim_x = data['Image Width']
             NF = data['Total Frame']
-            frame_start = data["Record Rate(fps)"]
+            frame_start = data["startFrame"]
             try:
                 t_start = campaign_metadata.sel(nshots = nshot).t_start.values
             except:
@@ -1109,19 +979,20 @@ def get_vid(ParamsVid):
         images_median = ndimage.median_filter(images, size=(median,1,1))
         images = images-images_median
 
-    if time_input:
+    if time_input is not None:
         name_time = 'time' + str(time_input[0]) + '_'   + str(time_input[1])
         t0 = time_input[0]
     else:
         name_time = 'frame' + str(frame_input[0]) + '_'   + str(frame_input[1])
-        t0 = t_start+frame_input[0]/fps
+        t0 = t_start+frame_input[0]/fps +frame_start/fps
 
     if 'reduce_frames' in  dict_vid.keys():
         reduce_frames = dict_vid['reduce_frames']
         images = average_along_first_row(images,reduce_frames)
         fps = fps/reduce_frames
     t_inv = t0+np.arange(images.shape[0])/fps
-    return images, images.shape[0], image_dim_y, image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv 
+    pdb.set_trace()
+    return images, images.shape[0], image_dim_y, image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv, nshot
         
 
 def clip_to_percentiles(data, low=0, high=100):
@@ -1531,6 +1402,24 @@ def load_west_equilibrium(nshot):
 
 
 
+def load_west_t_ignitron(nshot):
+    proc = subprocess.Popen(
+        ['/Applications/software/mamba/envs/python-3.11/bin/python',"/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/core/get_t_ignitron.py", str(nshot)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+
+    )
+
+    output, _ = proc.communicate()
+    # cmd = ['/Applications/software/mamba/envs/python-3.11/bin/python',
+    #     "/Home/LF285735/Documents/Python/WESTCOMPASS_tomography/Tomography/core/get_west_equilibrium.py",
+    #     str(nshot)
+    # ]
+    # result = subprocess.check_output(cmd, text=True)
+
+    t_ignitron = pickle.loads(output)
+    return t_ignitron
+
 def first_5_consecutive_digits(s: str) -> str:
     match = re.search(r"\d{5}", s)
     return match.group(0) if match else None
@@ -1555,25 +1444,26 @@ def normalize_params(obj):
         return obj
     
 
-def plot_west_separatrix(nshot, t = None, ax = None):
-    out = load_west_equilibrium(nshot)
-    r = out['r']
-    z = out['z']
-    psi = out['psi']
-    time = out['time']
-    psisep = out['psisep']
+def plot_west_separatrix(nshot, t = None, ax = None, color = 'r', linewidth = 2):
+    magflux = load_west_equilibrium(nshot)
+    r = magflux['r']
+    z = magflux['z']
+    psi = magflux['psi']
+    time = magflux['time']
+    psisep = magflux['psisep']
     time[np.isnan(time)] = 0
+    t_ignitron = load_west_t_ignitron(nshot)
+    time = time-t_ignitron
     if t is None:
         ind_t = len(time)//2
     else:
-        ind_t = np.argmin(np.abs(time-t))
+        ind_t = np.nanargmin(np.abs(time-t))
 
     if ax is None:
         ax = plt.gca()
-
     psi_plot = psi[ind_t, :, :]
     psi_sep = psisep[ind_t]
-    ax.contour(r, z, psi_plot, levels = [psi_sep])
+    ax.contour(r, z, psi_plot, levels = [psi_sep], colors = color, linewidths = linewidth)
     return r, z, psi, time
 
 
@@ -1799,3 +1689,42 @@ exit;
     data_dict = {name: mat_data[name] for name in mat_data.keys() if '__' not in name}
 
     return data_dict
+
+
+
+def update_mask(cell_r, cell_z, mask_node, RZwall, remove_side = 'inner'):
+    ### take a 2d mask, turns to false every element of the mask not inside or outside the wall (depends on orientation of the wall)
+    # from shapely.Geometry import Polygon, Point
+    from cherab.tools.primitives.axisymmetric_mesh import axisymmetric_mesh_from_polygon
+    from raysect.optical import Point3D
+
+    #input validation
+    if (len(cell_r), len(cell_z)) != mask_node.shape:
+        raise ValueError(f"Mask size {mask_node.shape} not confirming with coordinates size {(len(cell_r), len(cell_z))}")
+    if (len(RZwall.shape)!= 2) or (RZwall.shape[1]!=2):
+        raise ValueError(f"shape {RZwall.shape} does not conform to shape (Npoints, 2), polygon must be written as [R; Z]")
+    if (remove_side!='inner') and  (remove_side!='outer'):
+        raise ValueError(f'{remove_side} is not recognised as a correct input for which side to remove')
+    if(RZwall[0]==RZwall[-1]).all():
+        RZwall = RZwall[:-1]
+        print('erased last element of wall')
+    Trigonometric_orientation, signed_area = polygon_orientation(RZwall[:, 0], RZwall[:, 1])
+    if Trigonometric_orientation:
+        print("Polygon in trigonometric orientation (check that polygon has no self intersection). Swapping order of points so polygon is oriented in the inner side")
+        RZwall = RZwall[::-1]
+    wall = axisymmetric_mesh_from_polygon(RZwall)
+    for i in range(len(cell_r)):
+        for j in range(len(cell_z)):
+            if mask_node[i, j]: #only remove points, does not add back already masked points.
+                point = Point3D(cell_r[i], 0, cell_z[j])
+                pointisinside = wall.contains(point)
+                if remove_side == 'inner':
+                    mask_node[i, j] = np.invert(pointisinside) #set all inside points to false
+                elif remove_side == 'outer':
+                    mask_node[i, j] = pointisinside #set all outside points to false
+
+    return mask_node
+
+
+
+

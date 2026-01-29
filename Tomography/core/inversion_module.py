@@ -8,7 +8,7 @@ import numpy as np
 import scipy
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import ImageGrid
-
+from Tomography.core import utility_functions
 
 def synth_inversion(transfert_matrix, mask_pixel, mask_noeud,  pixels, noeuds, nb_noeuds_r, nb_noeuds_z,R_noeud, Z_noeud, R_wall, Z_wall, inversion_method, derivative_matrix, noise = 0, num_structures = 4, size_struct = 4, inversion_parameter = {"rcond": 1e-3}, c = 3):
     """
@@ -839,6 +839,9 @@ def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix,
         max_iterations = max_iterations or 250
         beta_laplace = inversion_parameter.get('beta_laplace')
         beta_laplace = beta_laplace or 0.01
+        relaxation =  inversion_parameter.get('relaxation')
+        relaxation = relaxation or 1
+
         inv_images = np.zeros((images.shape[0], transfert_matrix.shape[1]))
         images_retrofit = np.zeros_like(images)
         for i in range(images.shape[0]):
@@ -847,10 +850,10 @@ def inversion(images, transfert_matrix, inversion_method, folder_inverse_matrix,
         #         inv_image, residual = invert_sart(image, initial_guess=inv_images[i-1, :])
         #     else:
         #         inv_image, residual = invert_sart(image)
-            inv_image, residual = invert_sart(np.squeeze(image), beta_laplace = beta_laplace, max_iterations=max_iterations, conv_tol=0.0001)
+            inv_image, residual = invert_sart(np.squeeze(image), beta_laplace = beta_laplace, max_iterations=max_iterations, relaxation = relaxation, conv_tol=0.0001)
             inv_images[i, :] = inv_image
             images_retrofit[i, :] = transfert_matrix.dot(inv_image)  
-                                          
+        invert_sart.clean()
     else:
         raise Exception('unrecognised inversion method')
     # raise RuntimeError(f"Failed to deserialize input: {inv_image}")
@@ -881,8 +884,33 @@ def prep_inversion_dataset(rt_ds, ParamsInversion):
         node_min_value = inversion_parameter.get('node_min_value')
         transfert_matrix[transfert_matrix<node_min_value] = 0
         transfert_matrix, pixel, node, mask_pixel, mask_node = reindex_transfert_matrix(transfert_matrix, pixel, node, mask_pixel, mask_node)
-
-    
+    if 'remove_inner_components' in inversion_parameter.keys():
+        new_wall = inversion_parameter.get('remove_inner_components')
+        cell_r = np.array(rt_ds.cell_r)
+        cell_z = np.array(rt_ds.cell_z)
+        if isinstance(new_wall, list):
+            for wall_element in new_wall:
+                RZwall = np.load(wall_element)
+                
+                mask_node = utility_functions.update_mask(cell_r, cell_z, mask_node, RZwall, remove_side = 'inner')
+                transfert_matrix, pixel, node, mask_pixel, mask_node = reindex_transfert_matrix(transfert_matrix, pixel, node, mask_pixel, mask_node)
+        elif isinstance(new_wall, str):
+            RZwall = np.load(wall_element)
+            mask_node = utility_functions.update_mask(cell_r, cell_z, mask_node, RZwall, remove_side = 'inner')
+            transfert_matrix, pixel, node, mask_pixel, mask_node = reindex_transfert_matrix(transfert_matrix, pixel, node, mask_pixel, mask_node)
+    if 'new_wall' in inversion_parameter.keys():
+        new_wall = inversion_parameter.get('new_wall')
+        cell_r = np.array(rt_ds.cell_r)
+        cell_z = np.array(rt_ds.cell_z)
+        if isinstance(new_wall, list):
+            for wall_element in new_wall:
+                RZwall = np.load(wall_element)
+                mask_node = utility_functions.update_mask(cell_r, cell_z, mask_node, RZwall, remove_side = 'outer')
+                transfert_matrix, pixel, node, mask_pixel, mask_node = reindex_transfert_matrix_from_mask_node(transfert_matrix, pixel, node, mask_pixel, mask_node)
+        elif isinstance(new_wall, str):
+            RZwall = np.load(new_wall)
+            mask_node = utility_functions.update_mask(cell_r, cell_z, mask_node, RZwall, remove_side = 'outer')
+            transfert_matrix, pixel, node, mask_pixel, mask_node = reindex_transfert_matrix_from_mask_node(transfert_matrix, pixel, node, mask_pixel, mask_node)
     rows_node, cols_node = np.unravel_index(node, mask_node.shape)
     rows_pixel, cols_pixel = np.unravel_index(pixel, mask_pixel.shape)
 
@@ -936,3 +964,25 @@ def denoising_dataset(inv_ds, images, ParamsDenoising):
             inv_images_thresholded[:, i] = np.squeeze(inversion_class.thresholding(image[:, np.newaxis], c = c))
 
         return inv_images_thresholded.T, np.squeeze(inversion_class.norms)
+    
+
+
+def reindex_transfert_matrix_from_mask_node(transfert_matrix, pixel, node, mask_pixel, mask_node):
+    flat_indices = np.zeros(mask_node.size, dtype='bool')
+    new_node = np.flatnonzero(mask_node)
+
+    flat_indices[new_node] =True
+    reduced_flat_indices = flat_indices[node]
+    transfert_matrix = transfert_matrix[:, reduced_flat_indices]
+    visible_pixel  = np.where(np.sum(transfert_matrix, 1))[0] #sum over nodes
+    if len(visible_pixel) == len(pixel):
+        print("no new blind pixels")
+    else:
+        transfert_matrix = transfert_matrix[visible_pixel,:][:, reduced_flat_indices]
+        pixel = pixel[visible_pixel]
+        mask_pixel[:] = False
+        mask_pixel.ravel()[pixel] = True
+
+    return transfert_matrix, pixel, new_node, mask_pixel, mask_node
+
+

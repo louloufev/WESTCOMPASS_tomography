@@ -3,6 +3,7 @@ sys.path.append('/Home/LF285735/Documents/Python/WESTCOMPASS_tomography')
 from Tomography.core import result_inversion
 
 
+
 # #for easy debugging
 # import Tomography
 # importlib.reload(Tomography.core.fonction_tomo_test)
@@ -68,7 +69,7 @@ decimation = 2# int : used to average camera data into blocks of pixels; useful 
 # time_input = [1.150, 1.151]
 time_input = None # [t0, t1] in seconds
 # frame_input = None
-frame_input = [100, 200] # number of the frames
+frame_input = [7840-4750, 7940-4750] # number of the frames
             # if left at none, will treat the whole video
             # if both specified, will take time_input over frame_input
 # frame_input = None
@@ -82,8 +83,7 @@ Verbose = False #if set to True, will plot additionnal figures along the raytrac
 # parameter for the number of the shot
 nshot_grid =61357
 nshot =None
-path_vid = 'Tomography/ressources/61357 transition XPR_S0001'
-
+path_vid = "/Home/LF285735/Documents/Python/mnt/nunki/camera_rapide/Images CCD rapide/C11 (Jan2025-Apr2025)/20250226 XPR/61537_C001H001S0001/61537_C001H001S0001"
 
 #####
 ParamsMachine = result_inversion.ParamsMachine(machine  = machine,

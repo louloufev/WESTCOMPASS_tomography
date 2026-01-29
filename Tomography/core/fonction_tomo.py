@@ -80,7 +80,7 @@ def compute_raytracing(ParamsMachine, ParamsGrid):
     return rt_ds
 
 def treat_videos(ParamsVideo):
-    vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv = utility_functions.get_vid(ParamsVideo)
+    vid, len_vid,image_dim_y,image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv, nshot = utility_functions.get_vid(ParamsVideo)
     treated_video_ds = xr.Dataset(
         data_vars={
             "vid":(
@@ -101,6 +101,7 @@ def treat_videos(ParamsVideo):
             "ParamsVideo" : ParamsVideo.to_dict(),
             "NF" : len_vid,
             "fps" : fps,
+            "nshot" : nshot,
         }
     )
     return treated_video_ds
@@ -136,7 +137,7 @@ def compute_inversion(rt_ds, treated_videos_ds, ParamsInversion):
             "inversion":(
                 ("t_inv", "node"),
                 inv_images,
-                {"units":"m"}
+                {"units":"bits*m-1"}
             ),
             "images_retrofit":(
                 ("t_inv",  "pixel"),
@@ -173,6 +174,7 @@ def compute_inversion(rt_ds, treated_videos_ds, ParamsInversion):
             "ParamsGrid" : rt_ds.ParamsGrid,
             "ParamsVideo" : treated_videos_ds.ParamsVideo,
             "folder_inverse_matrix" : folder_inverse_matrix,
+            "nshot" : treated_videos_ds.nshot,
         }
     )
     return inv_ds
@@ -243,7 +245,8 @@ def compute_denoising(inv_ds, treated_video_ds, ParamsDenoising):
             "ParamsInversion" : inv_ds.ParamsInversion,
             "ParamsMachine" : inv_ds.ParamsMachine,
             "ParamsGrid" : inv_ds.ParamsGrid,
-            "ParamsDenoising" : ParamsDenoising.to_dict()
+            "ParamsDenoising" : ParamsDenoising.to_dict(),
+            "nshot": treated_video_ds.nshot,
         }
     )
 
@@ -712,7 +715,7 @@ def get_transfert_matrix(realcam, world, ParamsMachine, ParamsGrid, RZwall):
     print(num_points_rz)
     realcam.spectral_bins = plasma2.bins #set the grid to a size (NR, NZ) plus 1 extra node for elements of the grid too far from calculated field lines
     if realcam.spectral_bins >realcam.pixels[0]*realcam.pixels[1]:
-        raise Exception("more nodes than pixels, inversion is impossible. Lower dr_grid or dz_grid")
+        Warning ("more nodes than pixels, inversion is impossible. Lower dr_grid or dz_grid")
     if realcam.spectral_bins >10000:
         print("careful, huge number of nodes")
     # if verbose:
@@ -830,21 +833,30 @@ def remove_center_from_inversion(vertex_mask, cell_vertices_r, cell_vertices_z, 
         return contour_path.contains_point((x, y))
     
     nshot = ParamsGrid.nshot
+    
     try:
-        magflux = utility_functions.call_module_function_in_environment('west_functions','get_equilibrium', 'python-3.11', nshot)
+        magflux = utility_functions.load_west_equilibrium(nshot)
 
-        r = magflux.interp2D.r
-        z = magflux.interp2D.z
-        idx = magflux.interp2D.psi.shape[0]//2
-        psi = magflux.interp2D.psi[idx, ...]
-
+        r = magflux['r']
+        z = magflux['z']
+        psi_full = magflux['psi']
+        time = magflux['time']
+        psisep_full = magflux['psisep']
+        time[np.isnan(time)] = 0
+        t_ignitron = utility_functions.load_west_t_ignitron(nshot)
+        time = time-t_ignitron
         #get psi norm
         # self.r0 = 
         # self.z0 = 
         # self.psi_norm = magflux.interp2D.psi[idx, :, :]/magflux.boundary.psi[idx]
         # self.rsep = magflux.boundary.r[idx, :] doesn't exist
         # self.zsep = magflux.boundary.z[idx, :] doesn't exist
-        psisep = magflux.boundary.psi[idx]
+        if ParamsGrid.t_grid is None:
+            ind_t = len(time)//2
+        else:
+            ind_t = np.nanargmin(np.abs(time-ParamsGrid.t_grid))
+        psisep = psisep_full[ind_t]        
+        psi = psi_full[ind_t, :, :]
         psi0 = np.nanmax(psi)
 
         psi_int = 0.9*(psisep-psi0)+psi0
@@ -1381,6 +1393,7 @@ class Image2DAccessor:
         t_inv=0,
         index_dim="pixel",
         fill_value=np.nan,
+        post_process = False,
     ):
         ds = self._ds
 
@@ -1408,6 +1421,7 @@ class Image2DAccessor:
             img = np.flip(img, 0)
         elif orientation_attr == "swapaxes":
             img = img.T
+        
         return img
 
     def plot(
@@ -1416,6 +1430,9 @@ class Image2DAccessor:
         t_inv=0,
         index_dim="pixel",
         ax=None,
+        plot_separatrix = False,
+        plot_wall = False,
+        title = '',
         **imshow_kwargs,
     ):
         img = self.reconstruct(var, t_inv, index_dim)
@@ -1428,13 +1445,40 @@ class Image2DAccessor:
         elif index_dim=="node":
             extent = [np.min(self._ds.cell_r), np.max(self._ds.cell_r), np.min(self._ds.cell_z), np.max(self._ds.cell_z)] 
             im = ax.imshow(img, extent = extent, **imshow_kwargs)
-        ax.set_title(f"{var} (t={self._ds.sel(t_inv=t_inv, method = 'nearest').t_inv.values:.3f}s)")
+        ax.set_title(f"{title} {var} (t={self._ds.sel(t_inv=t_inv, method = 'nearest').t_inv.values:.3f}s)")
 
         units = self._ds[var].attrs.get("units", "")
         if units:
             plt.colorbar(im, ax=ax, label=units)
         else:
             plt.colorbar(im, ax=ax)
+
+        if plot_separatrix:
+            if index_dim == 'pixel':
+                raise NotImplemented("tracing separatrix on video image not implemented")
+            else:
+                machine = self._ds.ParamsMachine['machine']
+                if machine == "COMPASS":
+                    raise NotImplemented("tracing separatrix on emissivity profile not implemented")
+                else:
+                    if t_inv == 0:
+                        utility_functions.plot_west_separatrix(self._ds.nshot, t = None, ax = ax)
+                    else:
+                        utility_functions.plot_west_separatrix(self._ds.nshot, t = t_inv, ax = ax)
+        if plot_wall:
+            if index_dim == 'pixel':
+                raise NotImplemented("tracing separatrix on video image not implemented")
+            else:
+                machine = self._ds.ParamsMachine['machine']
+                if machine == "COMPASS":
+                    raise NotImplemented("tracing wall on emissivity profile not implemented")
+                else:
+                    if self._ds.ParamsInversion.inversion_parameter.get('new_wall') is not None:
+                        new_wall = self._ds.ParamsInversion.inversion_parameter.get('new_wall')
+                        RZwall = np.load(new_wall)
+                    else:
+                        RZwall = np.load('Tomography/ressources/west_wall_ext_stl.npy')
+                    ax.plot(RZwall[:, 0], RZwall[:, 1], 'k', linewidth = 2)
 
         return ax
     
@@ -1499,7 +1543,7 @@ class maskAccessor:
 
 
 
-def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None, save = 0):
+def geometry_matrix_spectro(ParamsMachine, ParamsGrid, ParamsInversion = None, name = None, save = 0):
     from scipy.io import loadmat
     LOS = loadmat('/Home/NF216031/MATLAB_NF/WEST_functions/DVIS/LOS_position_name.mat', struct_as_record=False, squeeze_me=True)
     LOS =utility_functions.matstruct_to_dict(LOS['dat'])
@@ -1574,52 +1618,10 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None, save = 0):
     R_wall = RZwall[:, 0]
     Z_wall = RZwall[:, 1]
 
-    wall_limit = axisymmetric_mesh_from_polygon(RZwall)
-    flag_wall_limit = 0
-    if flag_wall_limit:
-        name_wall_material = 'tungsten'
-        wall_limit.parent = world
-        if name_wall_material == 'absorbing surface':
-            wall_limit.material = AbsorbingSurface()
-        else:
-            wall_limit.material = RoughTungsten(0.5)
-    else:
-        full_wall = load_walls(ParamsMachine, world)
+    wall_limit = axisymmetric_mesh_from_polygon(RZwall)    
+    full_wall = load_walls(ParamsMachine, world)
 
-    
-    if ParamsMachine.machine == 'WEST':
-        R_max_noeud, R_min_noeud, Z_max_noeud, Z_min_noeud =[3.129871200000000, 1.834345700000000,0.798600000000000,-0.789011660000000]
-    
-       
-    if ParamsGrid.extra_steps:
-        R_max_noeud = R_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dr_grid
-        R_min_noeud = R_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dr_grid
-        Z_max_noeud = Z_max_noeud+ParamsGrid.extra_steps*ParamsGrid.dz_grid
-        Z_min_noeud = Z_min_noeud-ParamsGrid.extra_steps*ParamsGrid.dz_grid
-    extent_RZ =[R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud] 
-    nb_noeuds_r = int((R_max_noeud-R_min_noeud)/ParamsGrid.dr_grid)
-    nb_noeuds_z = int((Z_max_noeud-Z_min_noeud)/ParamsGrid.dz_grid)
-    cell_r, cell_z, grid_mask, cell_dr, cell_dz = get_mask_from_wall(R_min_noeud, R_max_noeud, Z_min_noeud, Z_max_noeud, nb_noeuds_r, nb_noeuds_z, wall_limit, ParamsGrid.crop_center, ParamsGrid)
-    # The RayTransferCylinder object is fully 3D, but for simplicity we're only
-    # working in 2D as this case is axisymmetric. It is easy enough to pass 3D
-    # views of our 2D data into the RayTransferCylinder object: we just ues a
-    # numpy.newaxis (or equivalently, None) for the toroidal dimension.
-    grid_mask = grid_mask[:, np.newaxis, :]
-    
-    n_polar = 1
-    RZ_mask_grid = np.copy(grid_mask)
-    grid_mask = np.tile(grid_mask, (1, n_polar, 1))
-    num_points_rz = nb_noeuds_r*nb_noeuds_z
-    step = 1e-5
-    plasma2 = RayTransferCylinder(radius_outer=cell_r[-1],
-                                        radius_inner=cell_r[0],
-                                        height=cell_z[-1] - cell_z[0],
-                                        n_radius=nb_noeuds_r, n_height=nb_noeuds_z, 
-                                        step=step, n_polar=n_polar, 
-                                        parent = world, transform=translate(0, 0, cell_z[0]))
- 
     real_pipeline = RayTransferPipeline2D()
-    
     camera = VectorCamera(pixel_origins[np.newaxis, :], pixel_directions[np.newaxis, :], parent = world)
     pixel_samples = ParamsGrid.pixel_samples
     # TRANSFORM = translate()
@@ -1629,48 +1631,44 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None, save = 0):
     camera.min_wavelength = 640
     camera.max_wavelength = camera.min_wavelength +1
     camera.render_engine.processes = 32
-    camera.spectral_bins = plasma2.bins
     camera.observe()
-    pipelines = camera.pipelines[0]
-    print('shape full transfert matrix = ' + str(pipelines.matrix.shape))
-    flattened_matr = pipelines.matrix.reshape(pipelines.matrix.shape[0] * pipelines.matrix.shape[1], pipelines.matrix.shape[2])
-    
-    if flattened_matr.shape[1] > num_points_rz:
-        #some elements of the grid don't see the field lines. Checking if they are out of the field of view of the camera
-        invisible_nodes = np.sum(flattened_matr, 0)[-1]
-        if invisible_nodes>0:
-            print('nodes not seen, choose bigger grid limits, or wall limits differ between CAD model and magnetic equilibrium')
-            # pdb.set_trace()
-        flattened_matr = flattened_matr[:, :-1]
-    print('flattened_matr shape', flattened_matr.shape)
+    transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel, cell_r, cell_z = get_transfert_matrix(camera, 
+                                                                                                                                              world, 
+                                                                                                                                              ParamsMachine, 
+                                                                                                                                              ParamsGrid, 
+                                                                                                                                              RZwall)
+    if ParamsInversion is not None:
+        if ParamsInversion.inversion_parameter != {}:
+            spectro_ds = xr.Dataset(
+                data_vars={
+                    "transfert_matrix": (
+                        ("pixel", "node"),
+                        transfert_matrix,
+                        {"units": "m"}
+                    ),
+                    
+                },
+                coords={
+                    "pixel": ("pixel", pixel),
+                    "node": ("node", node),
+                    "rows_pixel": ("pixel", rows_pixel),
+                    "cols_pixel": ("pixel", cols_pixel),
+                    "rows_node": ("node", rows_node),
+                    "cols_node": ("node", cols_node),
+                    
+                },
+                attrs={
+                    "pixel_shape": mask_pixel.shape,
+                    "node_shape": mask_node.shape,
+                    "mask_description": "Camera mask applied",
+                    "cell_r" : cell_r,
+                    "cell_z" : cell_z,
+                    "ParamsMachine":ParamsMachine.to_dict(),
+                    "ParamsGrid":ParamsGrid.to_dict(),
+                }
 
-
-    pixels,  = np.where(np.sum(flattened_matr, 1)) #sum over nodes
-    noeuds,  = np.where(np.sum(flattened_matr, 0)) #sum over pixels
-    #save results
-
-    mask_pixel = np.zeros(flattened_matr.shape[0], dtype = bool)
-    mask_pixel[pixels] = True
-    mask_pixel = mask_pixel.reshape(pipelines.matrix.shape[0:2])
-
-    mask_noeud = np.zeros_like(RZ_mask_grid, dtype = bool)
-    rows_noeud, indphi, cols_noeud = np.unravel_index(noeuds, mask_noeud.shape)
-    mask_noeud[rows_noeud,indphi, cols_noeud] = True
-    print('shape voxel_map ', plasma2.voxel_map.shape)
-    print('shape mask_noeud ', mask_noeud.shape)
-    
-    transfert_matrix = flattened_matr[pixels,:][:, noeuds]
-
-    nb_visible_noeuds = len(np.unique(noeuds))
-    nb_vision_pixel = len(np.unique(pixels))
-    print('visible node = ' + str(nb_visible_noeuds) + 'out of ' + str(nb_noeuds_r*nb_noeuds_z))
-    print('vision pixels = ' + str(nb_vision_pixel) + 'out of ' + str(pipelines.matrix.shape[0] * pipelines.matrix.shape[1]))
-
-    transfert_matrix = csr_matrix(transfert_matrix)
-    print(transfert_matrix.shape)
-    pixels = np.squeeze(pixels)
-    noeuds = np.squeeze(noeuds)
-
+            )
+            transfert_matrix, mask_node, mask_pixel, node, pixel, rows_node, cols_node, rows_pixel, cols_pixel = inversion_module.prep_inversion_dataset(spectro_ds, ParamsInversion)
 
     name_folder = 'mat_saves/'
     name_material = ParamsMachine.name_material.split('/')[-1]
@@ -1678,16 +1676,8 @@ def geometry_matrix_spectro(ParamsMachine, ParamsGrid, name = None, save = 0):
         name_CAD = os.path.splitext(ParamsMachine.path_CAD)[1]
     else:
         name_CAD = ParamsMachine.path_CAD.split('/')[-2]
-    if flag_wall_limit:
-        name_CAD = '2D_wall_mesh'
-        name_material = name_wall_material
-    if save:
-        dict_spectro = dict(R1 = R1, R2= R2, Z1=Z1, Z2= Z2, grid_mask = grid_mask, extent_RZ = extent_RZ, R_wall = R_wall,  Z_wall= Z_wall, transfert_matrix = transfert_matrix, mask_pixel= mask_pixel, mask_noeud= mask_noeud,  pipelines= pipelines, cell_r = cell_r, cell_z= cell_z)
-        savemat(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'spectro_los.mat', dict_spectro)
-        utility_functions.plot_image(np.squeeze(mask_noeud).T, extent = extent_RZ, origin = 'lower')
-        plt.savefig(name_folder + name_CAD+name_material+'dr'+str(ParamsGrid.dr_grid)+'step'+str(step)+'pixel_samples'+ str(pixel_samples)+'view spectro los.png')
-        plt.close()
-    return R1, R2, Z1, Z2, grid_mask, extent_RZ, R_wall, Z_wall, transfert_matrix, mask_pixel, mask_noeud, pipelines, cell_r, cell_z
+    
+    return R1, R2, Z1, Z2, R_wall, Z_wall, transfert_matrix, mask_pixel, mask_node, cell_r, cell_z
 
 def get_LOS_spectrometer(name):
     from scipy.io import loadmat
@@ -1731,9 +1721,11 @@ class Videomaker:
                 R = None,
                 Z = None,
                 keep_only = "all",
+                fps = 20,
+                add_separatrix = False, 
         ):
         
-        filename = filename + f"{var}_" + f"vid_{keep_only}" + 'std_deviation_range' + str(std_deviation_range) + '.mp4'
+        filename = filename + f"{var}_" + f"vid_{keep_only}" + 'std_deviation_range' + str(std_deviation_range) + "fps" + str(fps) +  '.mp4'
         filename = filename if filename.endswith(".mp4") else filename + ".mp4"
 
         if R is None:
@@ -1756,7 +1748,7 @@ class Videomaker:
             Std = np.std(array[array!= 0])
             #array[array<= Mean-std_deviation_range*Std] = Mean-std_deviation_range*Std
             array[array>= Mean+std_deviation_range*Std] = Mean+std_deviation_range*Std      
-        R, Z = utility_functions.array3d_to_video(array, filename, fps=20, R = R, Z = Z)
+        R, Z = utility_functions.array3d_to_video(array, filename, fps=fps, R = R, Z = Z)
         return np.array(R), np.array(Z)
 
 
@@ -1797,3 +1789,150 @@ class Video2DAccessor:
         elif orientation_attr == "swapaxes":
             img = np.swapaxes(img, 1, 2)
         return img
+
+
+
+def post_processing_inversion(inv_ds):
+    cell_r = np.array(inv_ds.cell_r)
+    cell_z = np.array(inv_ds.cell_z)
+    im = inv_ds.videoreconstruct.reconstruct("inversion", "node")
+    RZwall = np.load("Tomography/ressources/RZ_WEST_reduced.npy")
+    im = clean_inside_wall(im, cell_r, cell_z, RZwall)
+    
+    return im
+
+
+def clean_inside_wall(im, cell_r, cell_z, RZwall):
+   
+    if(RZwall[0]==RZwall[-1]).all():
+        RZwall = RZwall[:-1]
+        print('erased last element of wall')
+    Trigonometric_orientation, signed_area = utility_functions.polygon_orientation(RZwall[:, 0], RZwall[:, 1])
+    if Trigonometric_orientation:
+        print("Polygon in trigonometric orientation (check that polygon has no self intersection). Swapping order of points so polygon is oriented in the inner side")
+        RZwall = RZwall[::-1]
+    wall = axisymmetric_mesh_from_polygon(RZwall)
+    mask_node = np.zeros((len(cell_r), len(cell_z)), dtype = bool)
+    for i in range(len(cell_r)):
+        for j in range(len(cell_z)):
+         #only remove points, does not add back already masked points.
+            point = Point3D(cell_r[i], 0, cell_z[j])
+            pointisinside = wall.contains(point)
+            
+            mask_node[i, j] = np.invert(pointisinside) #set all inner points to false
+    mask_node = mask_node.T 
+    mask_node = np.flip(mask_node, 0) #rotate mask (R, Z)-> (Z, R) and flip Z axis (ascending Z)->(descending Z)
+    im[:, mask_node] = np.nan
+    return im
+
+def separatrix_subdivision(inv_ds):
+    from matplotlib.path import Path
+    magflux = utility_functions.load_west_equilibrium(inv_ds.nshot)
+    t_inv = np.mean(inv_ds.t_inv).item()
+    t_ignitron = utility_functions.load_west_t_ignitron(inv_ds.nshot)
+    time = magflux['time']
+    time = time-t_ignitron
+    ind_t = np.nanargmin(np.abs(time-t_inv))
+    r = magflux['r']
+    z = magflux['z']
+    psi = magflux['psi'][ind_t, :, :]
+    psisep = magflux['psisep'][ind_t]
+    rx = magflux['rx'][ind_t]
+    zx = magflux['zx'][ind_t]
+    fig, ax = plt.subplots()
+    contour = ax.contour(r, z, psi, levels=[psisep], colors='red')
+    plt.close(fig)
+    # Extract the contour line(s)
+    paths = contour.collections[0].get_paths()
+    if len(paths)==2:
+        PFR = paths[0]
+        LCFS = paths[1]
+    else:
+        path = paths[0]
+        PFR_contour = [point for point in path.vertices if point[1]<zx]
+        PFR = Path(PFR_contour)
+        LCFS_contour = [point for point in path.vertices if point[1]>=zx]
+        LCFS = Path(LCFS_contour)
+        
+
+
+    cell_r = np.array(inv_ds.cell_r)
+    cell_z = np.array(inv_ds.cell_z)
+
+    mask_node = np.zeros((len(cell_r), len(cell_z)))
+    for i in range(len(cell_r)):
+        for j in range(len(cell_z)):
+            if PFR.contains_point([cell_r[i], cell_z[j]]):
+                mask_node[i, j] = 1
+            elif LCFS.contains_point([cell_r[i], cell_z[j]]):
+                mask_node[i, j] = 2
+            else:
+                if cell_r[i]<rx:
+                    mask_node[i, j] = 3
+                else:
+                    mask_node[i, j] = 4
+    print("mask : 1 PFR, 2 LCFS, 3 HFS, 4 LFS")
+    return mask_node
+
+
+def separatrix_division_image(inv_ds, im = None):
+    mask = separatrix_subdivision(inv_ds)
+    cell_r = np.array(inv_ds.cell_r)
+    cell_z = np.array(inv_ds.cell_z)
+    cell_z = np.flip(cell_z)
+    extent = [np.min(cell_r), np.max(cell_r), np.min(cell_z), np.max(cell_z)] 
+    mask = mask.T 
+    mask = np.flip(mask, 0) #rotate mask (R, Z)-> (Z, R) and flip Z axis (ascending Z)->(descending Z)
+    if im is None:
+        im = post_processing_inversion(inv_ds)
+    r_lim = [2, 2.5]
+    z_lim = [-0.75, -0.4]
+    r_out = (cell_r < r_lim[0]) | (cell_r > r_lim[1])
+    z_out = (cell_z < z_lim[0]) | (cell_z > z_lim[1])
+    im[:, z_out, :] = 0
+    im[:, :, r_out] = 0
+    mask[z_out,:] = 0
+    mask[:, r_out] =  0
+    ax = utility_functions.plot_image(mask, extent = extent)
+    plt.title("mask : 0 PFR, 1 LCFS, 2 HFS, 3 LFS")
+    utility_functions.plot_image(im[50, :, :], extent = extent)
+    PFR = im[:, mask==1]
+    LCFS = im[:, mask==2]
+    HFS = im[:, mask==3]
+    LFS = im[:, mask==4]
+    extent = [np.min(r_lim), np.max(r_lim), np.min(z_lim), np.max(z_lim)]
+    im_small = im[:, np.invert(z_out),:]
+    im_small = im_small[:, :, np.invert(r_out)]
+    mask_small = mask[np.invert(z_out),:]
+    mask_small = mask_small[:, np.invert(r_out)]
+    return PFR, LCFS, HFS, LFS
+    
+def separatrix_division_time_evolution(inv_ds, im = None):
+    PFR, LCFS, HFS, LFS =separatrix_division_image(inv_ds, im)
+    PFR_t = np.nansum(PFR, 1)
+    LCFS_t= np.nansum(LCFS, 1)
+    HFS_t= np.nansum(HFS, 1)
+    LFS_t = np.nansum(LFS, 1)
+    return PFR_t, LCFS_t, HFS_t, LFS_t
+
+
+
+
+
+def plot_subdivision_time_evolution(inv_ds):
+
+    ###plot subdivision
+    PFR_t, LCFS_t, HFS_t, LFS_t= separatrix_division_time_evolution(inv_ds)
+    fig, ax = plt.subplots()
+    
+    ax.plot(inv_ds.t_inv.to_numpy(), PFR_t, label = 'PFR', color = 'b')
+    ax.plot(inv_ds.t_inv.to_numpy(),  LCFS_t, label = 'LCFS', color = 'g')
+    ax.plot(inv_ds.t_inv.to_numpy(),  HFS_t, label = 'HFS', color = 'm')
+    ax.plot(inv_ds.t_inv.to_numpy(), LFS_t, label = 'LFS', color = 'r')
+    ax.legend()
+    ax.set_xlabel('time (s)')
+    ax.set_ylabel('uncalibrated radiation')
+    ax.set_title(f"{inv_ds.nshot} NII radiation evolution")
+    return PFR_t, LCFS_t, HFS_t, LFS_t
+
+
