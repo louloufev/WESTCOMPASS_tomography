@@ -947,7 +947,7 @@ def get_vid(ParamsVid):
             else:
                 raise Exception('fail to load video')
             dict_video = RIS.get_info(nshot, RIS = RIS_number, origin = 'RAW')
-        images = video.data
+        images = np.double(video.data)
         Flip = dict_video['daq_parameters']['Flip']
         if Flip == 'Vertical':
             images = np.flip(images, 1)#flipping the video back to its original state
@@ -959,9 +959,9 @@ def get_vid(ParamsVid):
         image_dim_y = dict_video['daq_parameters']['FrameH']
         image_dim_x = dict_video['daq_parameters']['FrameW']
         fps = dict_video['daq_parameters']['FrameRate']
-        images.dtype = 'int16'
         
         frame_input = frame_bounds
+        frame_start = 0 #for compatibility with pyMRAW where the start of the frame numbering is not at the start of the shot timing
         if dict_video['daq_parameters']['TrigType'] == 'Start':
             t_start = dict_video['daq_parameters']['TriggerTime'] + dict_video['daq_parameters']['TriggerDelay']
         else:
@@ -991,7 +991,6 @@ def get_vid(ParamsVid):
         images = average_along_first_row(images,reduce_frames)
         fps = fps/reduce_frames
     t_inv = t0+np.arange(images.shape[0])/fps
-    pdb.set_trace()
     return images, images.shape[0], image_dim_y, image_dim_x, fps, frame_input, name_time, t_start, t0, t_inv, nshot
         
 
