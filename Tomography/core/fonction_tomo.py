@@ -1010,26 +1010,29 @@ def load_camera(path_calibration):
 def load_mask(path_calibration, path_mask):
     if path_mask is None:
         try:
-            import calcam
-            calcam_camera = calcam.Calibration(path_calibration)
-            mask_pixel = calcam_camera.subview_mask
-            mask_pixel = np.invert(mask_pixel)
-            mask_pixel = np.ascontiguousarray(mask_pixel)
-            name_mask = 'calibration_calcam'  
-        except:
             try:
-                calcam_camera = np.load(path_calibration, allow_pickle=True)
-
-                mask_pixel = calcam_camera['mask']
+                import calcam
+                calcam_camera = calcam.Calibration(path_calibration)
+                mask_pixel = calcam_camera.subview_mask
                 mask_pixel = np.invert(mask_pixel)
-                name_mask = 'calibration_calcam'
+                mask_pixel = np.ascontiguousarray(mask_pixel)
+                name_mask = 'calibration_calcam'  
             except:
-                name_mask = utility_functions.get_name(path_mask)
                 try:
-                    fmask = loadmat(path_mask)
-                    mask_pixel = fmask["mask"]
+                    calcam_camera = np.load(path_calibration, allow_pickle=True)
+
+                    mask_pixel = calcam_camera['mask']
+                    mask_pixel = np.invert(mask_pixel)
+                    name_mask = 'calibration_calcam'
                 except:
-                    mask_pixel = np.load(path_mask)
+                    name_mask = utility_functions.get_name(path_mask)
+                    try:
+                        fmask = loadmat(path_mask)
+                        mask_pixel = fmask["mask"]
+                    except:
+                        mask_pixel = np.load(path_mask)
+        except:
+            mask_pixel = np.ones((1024, 1024))
 
     else:
     
