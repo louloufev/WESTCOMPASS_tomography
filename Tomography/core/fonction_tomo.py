@@ -994,7 +994,15 @@ def load_camera(path_calibration):
         calcam_camera = np.load(path_calibration, allow_pickle=True)
         pixel_origins = calcam_camera['pixel_origins']
         pixel_directions = calcam_camera['pixel_directions']
-        realcam = VectorCamera(pixel_origins.T, pixel_directions.T)
+        shape_camera = (pixel_directions.shape[0], pixel_directions.shape[1])
+        origins = np.ndarray(shape_camera,dtype=object)
+        vectors = np.ndarray(shape_camera,dtype=object)
+        for ix in range(shape_camera[1]):
+            for iy in range(shape_camera[0]):
+                origins[iy,ix] = Point3D(*pixel_origins[iy,ix,:])
+                vectors[iy,ix] = Vector3D(*pixel_directions[iy,ix,:])   
+
+        realcam = VectorCamera(origins.T, vectors.T)
     return realcam
 
 
